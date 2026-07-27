@@ -1,17 +1,24 @@
 {
   "expo": {
-    "name": "pipe-rn",
-    "slug": "pipe-rn",
+    "name": "Pipe Nativo",
+    "slug": "pipe-native",
+    "scheme": "pipe",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "one.pipe.app"
     },
     "android": {
+      "package": "one.pipe.app",
+      "permissions": [
+        "RECORD_AUDIO"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#6366f1",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -19,6 +26,34 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-video",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Pipe usa el micrófono para tus notas de voz y el dictado con IA."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pipe accede a tus fotos para que puedas enviarlas en los chats."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/sounds/alarm_beep.mp3",
+            "./assets/sounds/alarm_chime.mp3",
+            "./assets/sounds/alarm_pulse.mp3"
+          ]
+        }
+      ],
+      "expo-share-intent",
+      "@react-native-community/datetimepicker"
+    ]
   }
 }
