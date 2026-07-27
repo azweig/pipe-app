@@ -5,9 +5,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThreads, getGroups, setArchive, setSilence } from "../api"
+import { getThreads, getGroups, setArchive, setSilence, saveEspacio } from "../api"
 import { ago, preview, espIcon, bucketCat } from "../util"
 import Avatar from "../components/Avatar"
+import Sheet from "../components/Sheet"
+import { Alert } from "react-native"
 
 const CH_BADGE = {
   whatsapp: { t: "WhatsApp", bg: "#25D366" }, email: { t: "Mail", bg: "#EA4335" }, telegram: { t: "Telegram", bg: "#229ED9" },
@@ -32,6 +34,14 @@ export default function Inbox({ navigation }) {
   const [tab, setTab] = useState("todo")
   const [q, setQ] = useState("")
   const [refreshing, setRefreshing] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState("")
+
+  async function createEspacio() {
+    const v = newName.trim(); if (!v) return
+    try { const e = await saveEspacio({ name: v }); setCreating(false); setNewName(""); load(); if (e && e.id) navigation.navigate("Espacio", { id: e.id, name: e.name }) } // creado → abrilo para agregar reglas
+    catch (err) { Alert.alert("Error", err.message || "No se pudo crear el espacio") }
+  }
 
   const load = useCallback(async (spin) => {
     if (spin) setRefreshing(true)
@@ -151,7 +161,13 @@ export default function Inbox({ navigation }) {
   return (
     <View style={{ flex: 1, backgroundColor: theme.card, paddingTop: insets.top }}>
       <StatusBar barStyle="dark-content" />
-      <Text style={{ fontSize: 28, fontWeight: "800", color: theme.ink, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 }}>{t("inbox")}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 }}>
+        <Text style={{ fontSize: 28, fontWeight: "800", color: theme.ink }}>{t("inbox")}</Text>
+        <TouchableOpacity onPress={() => setCreating(true)} hitSlop={10} style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+          <Text style={{ fontSize: 16, color: theme.accent, fontWeight: "800", marginTop: -1 }}>+</Text>
+          <Text style={{ fontSize: 13.5, color: theme.accent, fontWeight: "700" }}>Espacio</Text>
+        </TouchableOpacity>
+      </View>
       <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
         <TextInput value={q} onChangeText={setQ} placeholder={t("search_placeholder")} placeholderTextColor={theme.muted2}
           autoCapitalize="none" autoCorrect={false} returnKeyType="search"
@@ -181,6 +197,14 @@ export default function Inbox({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.accent} colors={[theme.accent]} />}
         ListEmptyComponent={<Text style={{ textAlign: "center", color: theme.muted, marginTop: 40 }}>{q ? t("nothing_matches") : t("no_convs")}</Text>}
       />
+
+      {/* crear espacio: solo el nombre; las reglas se agregan adentro (⚙️) */}
+      <Sheet visible={creating} onClose={() => setCreating(false)}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>➕ Nuevo espacio</Text>
+        <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 14 }}>Un espacio agrupa mensajes por reglas (un número, un dominio, un nombre…). Ponele nombre y después agregás las reglas.</Text>
+        <TextInput value={newName} onChangeText={setNewName} placeholder="Ej: Trabajo, Familia, Banco…" placeholderTextColor={theme.muted2} autoFocus returnKeyType="done" onSubmitEditing={createEspacio} style={{ backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: theme.ink, marginBottom: 14 }} />
+        <TouchableOpacity onPress={createEspacio} disabled={!newName.trim()} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center", opacity: newName.trim() ? 1 : 0.5 }}><Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Crear y agregar reglas</Text></TouchableOpacity>
+      </Sheet>
     </View>
   )
 }
