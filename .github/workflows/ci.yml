@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      # instala con el lockfile exacto (valida que package.json ↔ package-lock estén en sync y que instale limpio)
+      - run: npm ci
+      # salud del proyecto Expo: SDK/deps compatibles, app.json válido, sin config rota
+      - run: npx expo-doctor
