@@ -8,13 +8,14 @@ import * as LocalAI from "../localai"
 export default function LocalAICard({ t }) {
   const [st, setSt] = useState({ ready: false, installed: false, correct: false, stt: false })
   const [dl, setDl] = useState(null) // { which:'llm'|'stt', pct:0..1 }
+  const [avail, setAvail] = useState(null) // ¿están los módulos nativos (llama.rn/whisper.rn) en este build? null=chequeando
   const T = (k, d) => { try { const v = t && t(k); return v && v !== k ? v : d } catch { return d } }
 
   async function refresh() {
     const installed = await LocalAI.installed(); const p = await LocalAI.prefs()
     setSt({ ready: true, installed, correct: p.correct, stt: p.stt })
   }
-  useEffect(() => { refresh() }, [])
+  useEffect(() => { LocalAI.nativeAvailable().then((a) => { setAvail(a); if (a) refresh() }).catch(() => setAvail(false)) }, [])
 
   async function install() {
     try {
@@ -33,6 +34,7 @@ export default function LocalAICard({ t }) {
   }
 
   if (!st.ready) return null
+  if (!avail) return null // sin los módulos nativos en el build → ocultamos la card (la IA local necesita un build con llama.rn/whisper.rn)
   return (
     <View style={{ marginTop: 18 }}>
       <Text style={{ fontSize: 12.5, fontWeight: "800", color: theme.muted, marginBottom: 8, marginLeft: 2, letterSpacing: 0.4 }}>🧠 {T("localai_title", "IA local (opcional)")}</Text>

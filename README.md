@@ -11,7 +11,10 @@ The native iOS/Android app for **[Pipe](https://pipe.one)** — your self-hostab
 - **AI that helps** — draft replies in your voice, summaries, "who needs a reply".
 - **Voice notes** — record and send, or dictate → transcribe → send.
 - **Text review before sending** — spelling/grammar polish with a clear "send as-is" option.
-- **🧠 On-device AI (optional)** — install a ~550 MB local model pack (Qwen3-0.6B + Whisper base) to run **correction and transcription 100% on your phone**: offline, private, instant. Opt-in, removable, with automatic fallback to your hub. See **[SETUP-LOCALAI.md](SETUP-LOCALAI.md)**.
+- **Spaces** — group conversations by rules (a number, an email domain, a name) and manage them from the app: create, rename, add/remove rules, delete.
+- **Import WhatsApp history** — bring old chats in from the phone with no PC and no root: in WhatsApp, *Export chat → Without media*, then upload the `.txt` in **Settings**. Parsed and merged into the thread, de-duplicated. (Per-chat — WhatsApp has no "export all".)
+- **Contact profile** — real contact data (tap to **call** the number, email), relationship graph, and a per-contact **"who is this"** AI card.
+- **🧠 On-device AI (optional)** — a ~550 MB local model pack (Qwen3-0.6B + Whisper base) to run **correction and transcription 100% on your phone**: offline, private, instant. Opt-in, removable, with automatic fallback to your hub. Needs a build that includes `llama.rn` + `whisper.rn` (the card auto-hides when they aren't in the build). See **[SETUP-LOCALAI.md](SETUP-LOCALAI.md)**.
 - **Alarms**, push notifications, and **ES / EN** localization.
 
 ## Stack

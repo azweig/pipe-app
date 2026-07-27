@@ -41,11 +41,17 @@ export async function uninstall() {
   try { await AsyncStorage.multiSet([["localai.correct", "0"], ["localai.stt", "0"]]) } catch {}
 }
 
+// Los módulos nativos (llama.rn / whisper.rn) son OPCIONALES y pueden NO estar en este build (IA local = build aparte con esos libs).
+// Nombre COMPUTADO (array.join) → Metro NO intenta resolverlos en build → la app COMPILA sin ellos; si faltan, la IA local se auto-oculta.
+async function loadNative(kind) { try { const name = (kind === "llm" ? ["llama", "rn"] : ["whisper", "rn"]).join("."); return await import(name) } catch { return null } }
+export async function nativeAvailable() { return !!(await loadNative("llm")) }
+
 // ── CORRECCIÓN (llama.rn + Qwen3-0.6B) ── mismo contrato que el server: {original, corrected, alternative, failed?}
 let _llm = null
 async function llmCtx() {
   if (_llm) return _llm
-  const { initLlama } = await import("llama.rn")
+  const m = await loadNative("llm"); if (!m) throw new Error("IA local no disponible en este build")
+  const { initLlama } = m
   _llm = await initLlama({ model: pathOf("llm"), n_ctx: 1024, n_gpu_layers: 99 }) // n_gpu_layers>0 → usa Metal/GPU si el device puede
   return _llm
 }
@@ -72,7 +78,7 @@ export async function correctLocal(text) {
 // ── TRANSCRIPCIÓN (whisper.rn + Whisper base) ── mismo contrato que el server: {text}
 // Nota: whisper.cpp espera WAV 16kHz mono. whisper.rn intenta convertir; si tu grabación m4a no anda, hay que pasarla a wav 16k antes.
 let _stt = null
-async function sttCtx() { if (_stt) return _stt; const { initWhisper } = await import("whisper.rn"); _stt = await initWhisper({ filePath: pathOf("stt") }); return _stt }
+async function sttCtx() { if (_stt) return _stt; const m = await loadNative("stt"); if (!m) throw new Error("IA local no disponible en este build"); const { initWhisper } = m; _stt = await initWhisper({ filePath: pathOf("stt") }); return _stt }
 export async function transcribeLocal(fileUri, lang = "es") {
   try {
     const ctx = await sttCtx()
