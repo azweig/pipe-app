@@ -6,6 +6,7 @@ import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
+import WhatsAppImportCard from "../components/WhatsAppImport"
 
 const AI_PROV = [["openai", "OpenAI"], ["anthropic", "Anthropic (Claude)"], ["gemini", "Google Gemini"]]
 const PLABEL = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini", ollama: "Ollama (local)", gestionado: "GPU box (gestionado)" }
@@ -130,6 +131,7 @@ export default function Settings({ navigation }) {
         </Card>
 
         <LocalAICard t={t} />
+        <WhatsAppImportCard t={t} />
         <Card title={"🎙️ " + t("transcription")}>
           <Row onPress={() => saveStt("local")}><Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>{t("stt_local")}</Text>{llm.stt === "local" ? <Text style={{ color: theme.accent, fontWeight: "800" }}>✓</Text> : null}</Row>
           <Row onPress={() => saveStt("openai")} last><Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>{t("stt_cloud")}</Text>{llm.stt === "openai" ? <Text style={{ color: theme.accent, fontWeight: "800" }}>✓</Text> : null}</Row>

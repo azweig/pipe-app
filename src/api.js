@@ -55,6 +55,11 @@ async function uploadRaw(path, fileUri, mime) {
   } catch (e) { return { error: e.message || "subida falló" } }
 }
 
+// importa un export de WhatsApp (.txt de "Exportar chat") al historial. name = nombre del chat (para mergear al hilo correcto),
+// order = DMY|MDY|auto (formato de fecha del teléfono), tz = offset en minutos (para convertir la hora local del export a UTC).
+export const importWhatsApp = (fileUri, { name = "", order = "auto", tz = 0, group = false } = {}) =>
+  uploadRaw(`/api/import/whatsapp?name=${encodeURIComponent(name)}&order=${order}&tz=${tz}&group=${group ? "1" : ""}`, fileUri, "text/plain")
+
 export const getThreads = () => api("/api/threads?limit=200")
 export const getThread = (key) => api("/api/thread?key=" + encodeURIComponent(key) + "&limit=60")
 export const getTargets = (key) => api("/api/thread/targets?key=" + encodeURIComponent(key))
