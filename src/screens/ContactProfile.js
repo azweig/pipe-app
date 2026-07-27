@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react"
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert } from "react-native"
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert, Linking } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Line } from "react-native-svg"
 import { theme } from "../theme"
@@ -92,6 +92,7 @@ export default function ContactProfile({ route, navigation }) {
   const convKey = p.canon || nm
   const st = p.stats || {}
   const people = (p.shared && p.shared.people) || [], groups = (p.shared && p.shared.groups) || []
+  const phones = (p.contacts && p.contacts.phones) || [], emails = (p.contacts && p.contacts.emails) || []
   const enComun = people.length + groups.length
   const resp = st.respMin != null ? (st.respMin < 60 ? "~" + st.respMin + " min" : "~" + (st.respMin / 60).toFixed(1) + " h") : "—"
   const needsGen = p.pending || (!p.bio && !(p.topics || []).length) // perfil sin data → ofrecer generar
@@ -119,7 +120,7 @@ export default function ContactProfile({ route, navigation }) {
         </View>
         <Graph nm={nm} photo={photo || p.photo} people={people} groups={groups} orgs={p.orgs} onPerson={(name) => navigation.push("Person", { name })} />
         <Text style={{ color: "#fff", fontSize: 23, fontWeight: "800", marginTop: 4 }}>{nm}</Text>
-        <Text style={{ color: "#b9b9d6", fontSize: 13.5, marginTop: 3 }}>{[p.role, p.orgs].filter(Boolean).join(" · ") || p.tags || "Contacto"}</Text>
+        <Text style={{ color: "#b9b9d6", fontSize: 13.5, marginTop: 3 }}>{[p.role, p.orgs].filter(Boolean).join(" · ") || (phones[0] ? "+" + phones[0] : "") || emails[0] || p.tags || ""}</Text>
       </View>
 
       <View style={{ padding: 16 }}>
@@ -128,6 +129,25 @@ export default function ContactProfile({ route, navigation }) {
           <TouchableOpacity onPress={() => navigation.navigate("Conversation", { convKey, name: nm, photo: photo || p.photo })} style={{ flex: 1, backgroundColor: theme.accent, borderRadius: 12, padding: 13, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "700" }}>💬 {t("messages")}</Text></TouchableOpacity>
           <TouchableOpacity onPress={openMerge} style={{ flex: 1, backgroundColor: theme.card, borderRadius: 12, padding: 13, alignItems: "center" }}><Text style={{ color: theme.ink, fontWeight: "700" }}>🔗 {t("link_contact_btn")}</Text></TouchableOpacity>
         </View>
+
+        {/* DATOS DE CONTACTO: número (llamar por teléfono) + email (los de WhatsApp no se llaman por la app, pero SÍ por el teléfono real) */}
+        {(phones.length || emails.length) ? (
+          <View style={card}>
+            <Text style={cardHead}>{t("contact_data") !== "contact_data" ? t("contact_data") : "DATOS DE CONTACTO"}</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {phones.map((ph, i) => (
+                <TouchableOpacity key={"p" + i} onPress={() => Linking.openURL("tel:+" + ph)} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10 }}>
+                  <Text style={{ fontSize: 14, color: theme.ink, fontWeight: "600" }}>📞 +{ph}</Text>
+                </TouchableOpacity>
+              ))}
+              {emails.map((em, i) => (
+                <TouchableOpacity key={"e" + i} onPress={() => Linking.openURL("mailto:" + em)} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10 }}>
+                  <Text style={{ fontSize: 14, color: theme.ink, fontWeight: "600" }}>✉️ {em}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         {/* generar grafify (perfil sin data) */}
         {needsGen ? (

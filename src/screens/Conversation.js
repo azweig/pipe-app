@@ -23,6 +23,7 @@ export default function Conversation({ route, navigation }) {
   const insets = useSafeAreaInsets()
   const t = useT()
   const [items, setItems] = useState([])
+  const [isGroup, setIsGroup] = useState(false)
   const [text, setText] = useState("")
   const [loading, setLoading] = useState(true)
   const [targets, setTargets] = useState([])
@@ -44,7 +45,7 @@ export default function Conversation({ route, navigation }) {
   const load = useCallback(async () => {
     try {
       const d = await getThread(convKey)
-      setItems(d.items || []); setLoading(false)
+      setItems(d.items || []); setIsGroup(!!d.group); setLoading(false)
       AsyncStorage.setItem(cacheKey, JSON.stringify((d.items || []).slice(-60))).catch(() => {})
     } catch (e) { if (e && e.code === 401) navigation.replace("Login"); setLoading(false) }
   }, [convKey, navigation])
@@ -167,7 +168,7 @@ export default function Conversation({ route, navigation }) {
     return (
       <Pressable onLongPress={() => openMenu(item)} delayLongPress={280} style={{ flexDirection: "row", justifyContent: out ? "flex-end" : "flex-start", paddingHorizontal: 10, marginVertical: 2 }}>
         <View style={{ maxWidth: "84%", backgroundColor: out ? theme.bubbleOut : theme.bubbleIn, borderRadius: 15, paddingHorizontal: hasMedia ? 6 : 11, paddingVertical: hasMedia ? 6 : 7, borderWidth: out ? 0 : 0.5, borderColor: theme.line }}>
-          {!out && item.name ? <Text style={{ fontSize: 12, fontWeight: "700", color: color(item.name), marginBottom: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{item.name}</Text> : null}
+          {!out && isGroup && item.name ? <Text style={{ fontSize: 12, fontWeight: "700", color: color(item.name), marginBottom: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{item.name}</Text> : null}
           {hasMedia ? <MediaBubble item={item} out={out} /> : null}
           {showText ? <Text style={{ fontSize: 15.5, color: theme.ink, lineHeight: 20, marginTop: hasMedia ? 5 : 0, paddingHorizontal: hasMedia ? 5 : 0 }}>{item.text}</Text> : null}
           <Text style={{ fontSize: 10, color: out ? "#6b9a80" : theme.muted2, alignSelf: "flex-end", marginTop: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{hhmm(item.ts)}{out ? " ✓✓" : ""}</Text>
@@ -184,7 +185,7 @@ export default function Conversation({ route, navigation }) {
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.bg }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingTop: insets.top + 6, paddingBottom: 9, paddingHorizontal: 8, backgroundColor: theme.card, borderBottomWidth: 0.5, borderBottomColor: theme.line }}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10} style={{ paddingHorizontal: 6 }}><Text style={{ color: theme.accent, fontSize: 26, marginTop: -2 }}>‹</Text></TouchableOpacity>
-        <TouchableOpacity activeOpacity={0.6} onPress={() => navigation.navigate("Person", { name: convKey, photo })} style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <TouchableOpacity activeOpacity={0.6} onPress={() => navigation.navigate("Person", { name: name || convKey, photo })} style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Avatar name={name} photo={photo} size={34} />
           <Text numberOfLines={1} style={{ fontWeight: "700", fontSize: 17, color: theme.ink, flex: 1 }}>{name} <Text style={{ color: theme.muted2, fontSize: 13 }}>›</Text></Text>
         </TouchableOpacity>
