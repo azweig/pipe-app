@@ -9,7 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThread, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert } from "../api"
+import { getThread, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert, getBase } from "../api"
 import { hhmm, color, preview } from "../util"
 import Avatar from "../components/Avatar"
 import MediaBubble from "../components/MediaBubble"
@@ -352,7 +352,7 @@ export default function Conversation({ route, navigation }) {
       <Sheet visible={sheet === "covert"} onClose={() => setSheet(null)}>
         <View>
           <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>🕊️ Modo encubierto</Text>
-          <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 12, lineHeight: 17 }}>Tu mensaje viaja cifrado, disfrazado de texto normal (poema, cuento…). {name} con la misma clave lo ve descifrado. ¿No tiene Pipe? → pipe.one/decodificar</Text>
+          <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 12, lineHeight: 17 }}>Tu mensaje viaja cifrado, disfrazado de texto normal (poema, cuento…). {name} con la misma clave lo ve descifrado. ¿No tiene Pipe? → descifra en {String(getBase() || "tu hub").replace(/^https?:\/\//, "")}/decrypt</Text>
           {covertStyle ? (
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: theme.bg, borderRadius: 12, padding: 13, marginBottom: 12 }}>
               <Text style={{ fontSize: 15.5, color: theme.ink, fontWeight: "700" }}>Enviar encubierto</Text>
