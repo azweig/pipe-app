@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react"
-import { View, Text, TextInput, TouchableOpacity, Pressable, FlatList, Platform, ActivityIndicator, Alert, ScrollView } from "react-native"
+import { View, Text, TextInput, TouchableOpacity, Pressable, FlatList, Platform, ActivityIndicator, Alert, ScrollView, Switch } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import * as Haptics from "expo-haptics"
 import { useAudioRecorder, RecordingPresets, AudioModule, setAudioModeAsync } from "expo-audio"
@@ -9,7 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThread, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile } from "../api"
+import { getThread, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert } from "../api"
 import { hhmm, color, preview } from "../util"
 import Avatar from "../components/Avatar"
 import MediaBubble from "../components/MediaBubble"
@@ -24,6 +24,10 @@ export default function Conversation({ route, navigation }) {
   const t = useT()
   const [items, setItems] = useState([])
   const [isGroup, setIsGroup] = useState(false)
+  const [covertStyle, setCovertStyle] = useState(null) // estilo del modo encubierto si está configurado para este contacto (null = no)
+  const [covertOn, setCovertOn] = useState(false)      // enviar el próximo mensaje encubierto (cifrado + disfrazado)
+  const [covCfg, setCovCfg] = useState(null)           // {enabled, style, styles} para el sheet de config
+  const [covPass, setCovPass] = useState(""); const [covSel, setCovSel] = useState("poema"); const [covPrev, setCovPrev] = useState("")
   const [text, setText] = useState("")
   const [loading, setLoading] = useState(true)
   const [targets, setTargets] = useState([])
@@ -45,7 +49,7 @@ export default function Conversation({ route, navigation }) {
   const load = useCallback(async () => {
     try {
       const d = await getThread(convKey)
-      setItems(d.items || []); setIsGroup(!!d.group); setLoading(false)
+      setItems(d.items || []); setIsGroup(!!d.group); setCovertStyle(d.covert || null); if (!d.covert) setCovertOn(false); setLoading(false)
       AsyncStorage.setItem(cacheKey, JSON.stringify((d.items || []).slice(-60))).catch(() => {})
     } catch (e) { if (e && e.code === 401) navigation.replace("Login"); setLoading(false) }
   }, [convKey, navigation])
@@ -68,12 +72,33 @@ export default function Conversation({ route, navigation }) {
     let t = (raw || "").trim(); if (!t) return
     if (replyTo) { const q = (replyTo.text || "").replace(/\s+/g, " ").slice(0, 160); t = `> ${replyTo.name}: ${q}\n${t}`; setReplyTo(null) }
     setText("")
-    const id = optimistic({ text: t })
+    const id = optimistic({ text: t, ...(covertOn ? { covert: { text: t, style: covertStyle } } : {}) }) // covert: burbuja muestra tu texto real + badge
     try { Haptics.selectionAsync() } catch {}
-    const r = await sendMsg(convKey, t, target)
+    const r = await sendMsg(convKey, t, target, covertOn)
     if (r && r.error) { setItems((x) => x.filter((m) => m.id !== id)); Alert.alert("No se pudo enviar", r.error) }
     setTimeout(load, 700)
   }
+
+  // ── MODO ENCUBIERTO ("El Santo") ──
+  async function openCovert() {
+    const cfg = await getCovertCfg(convKey).catch(() => null)
+    const c = cfg || { enabled: false, style: "poema", styles: [] }
+    setCovCfg(c); setCovSel(c.style || "poema"); setCovPass(""); setCovPrev(""); setSheet("covert")
+  }
+  async function covPreview(pass, style) {
+    if (!pass) return setCovPrev("")
+    const r = await previewCovert("nos vemos mañana, avisá cuando salgas", pass, style).catch(() => null)
+    setCovPrev((r && r.cover) || "")
+  }
+  async function covSave() {
+    const pass = covPass.trim()
+    if (pass.length < 4) return Alert.alert("Clave corta", "Poné una clave de al menos 4 caracteres (la MISMA que la otra persona).")
+    const r = await setCovertCfg(convKey, pass, covSel).catch(() => null)
+    if (!r || !r.enabled) return Alert.alert("No se pudo guardar")
+    setCovertStyle(r.style); setCovertOn(true); setSheet(null)
+  }
+  async function covDisable() { await setCovertCfg(convKey, "", "poema").catch(() => {}); setCovertStyle(null); setCovertOn(false); setSheet(null) }
+  function covReveal(item) { Alert.alert("🕊️ Texto original", "Lo que ve quien NO tiene la clave (ej. por WhatsApp):\n\n" + (item.text || "")) }
   // al tocar enviar: muestra el popup con 3 opciones (corregido / tal cual / otra), como la web. Elegís y recién manda.
   const onSend = () => { const t = text.trim(); if (t) showSendOptions(t) }
 
@@ -170,7 +195,12 @@ export default function Conversation({ route, navigation }) {
         <View style={{ maxWidth: "84%", backgroundColor: out ? theme.bubbleOut : theme.bubbleIn, borderRadius: 15, paddingHorizontal: hasMedia ? 6 : 11, paddingVertical: hasMedia ? 6 : 7, borderWidth: out ? 0 : 0.5, borderColor: theme.line }}>
           {!out && isGroup && item.name ? <Text style={{ fontSize: 12, fontWeight: "700", color: color(item.name), marginBottom: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{item.name}</Text> : null}
           {hasMedia ? <MediaBubble item={item} out={out} /> : null}
-          {showText ? <Text style={{ fontSize: 15.5, color: theme.ink, lineHeight: 20, marginTop: hasMedia ? 5 : 0, paddingHorizontal: hasMedia ? 5 : 0 }}>{item.text}</Text> : null}
+          {item.covert ? (
+            <View>
+              <Text style={{ fontSize: 15.5, color: theme.ink, lineHeight: 20 }}>{item.covert.text}</Text>
+              <TouchableOpacity onPress={() => covReveal(item)} hitSlop={6}><Text style={{ fontSize: 11, color: theme.accent, marginTop: 3 }}>🕊️ descifrado · ver original</Text></TouchableOpacity>
+            </View>
+          ) : (showText ? <Text style={{ fontSize: 15.5, color: theme.ink, lineHeight: 20, marginTop: hasMedia ? 5 : 0, paddingHorizontal: hasMedia ? 5 : 0 }}>{item.text}</Text> : null)}
           <Text style={{ fontSize: 10, color: out ? "#6b9a80" : theme.muted2, alignSelf: "flex-end", marginTop: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{hhmm(item.ts)}{out ? " ✓✓" : ""}</Text>
         </View>
       </Pressable>
@@ -189,6 +219,7 @@ export default function Conversation({ route, navigation }) {
           <Avatar name={name} photo={photo} size={34} />
           <Text numberOfLines={1} style={{ fontWeight: "700", fontSize: 17, color: theme.ink, flex: 1 }}>{name} <Text style={{ color: theme.muted2, fontSize: 13 }}>›</Text></Text>
         </TouchableOpacity>
+        {convKey !== "self" ? <TouchableOpacity onPress={openCovert} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", backgroundColor: covertOn ? theme.accent : "transparent" }}><Text style={{ fontSize: 19, opacity: covertOn ? 1 : (covertStyle ? 0.85 : 0.4) }}>🕊️</Text></TouchableOpacity> : null}
       </View>
 
       {loading && !items.length ? (
@@ -220,7 +251,7 @@ export default function Conversation({ route, navigation }) {
         <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6, padding: 8, paddingBottom: (insets.bottom || 8) + 4, backgroundColor: theme.card, borderTopWidth: 0.5, borderTopColor: theme.line }}>
           <TouchableOpacity onPress={() => setSheet("ai")} style={round(theme.bg, theme.accent)}><Text style={{ color: theme.accent, fontWeight: "800", fontSize: 14 }}>Ai</Text></TouchableOpacity>
           {multiTarget ? <TouchableOpacity onPress={() => setSheet("target")} style={round("#fff", theme.line)}><Text style={{ fontSize: 16 }}>{chanIcon}▾</Text></TouchableOpacity> : null}
-          <TextInput value={text} onChangeText={setText} placeholder={target && target.channel === "email" ? "Email…" : t("message_ph")} placeholderTextColor={theme.muted2} multiline
+          <TextInput value={text} onChangeText={setText} placeholder={covertOn ? "🕊️ Mensaje encubierto…" : (target && target.channel === "email" ? "Email…" : t("message_ph"))} placeholderTextColor={theme.muted2} multiline
             style={{ flex: 1, minHeight: 40, backgroundColor: "#fff", borderWidth: 1, borderColor: theme.line, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, fontSize: 15.5, maxHeight: 120, color: theme.ink }} />
           {text.trim() ? (
             <TouchableOpacity onPress={onSend} style={round(theme.accent)}><Text style={{ color: "#fff", fontSize: 18 }}>➤</Text></TouchableOpacity>
@@ -314,6 +345,32 @@ export default function Conversation({ route, navigation }) {
               <Text numberOfLines={1} style={{ flex: 1, fontSize: 15, color: theme.ink }}>{t.name}</Text>
             </TouchableOpacity>
           ))}
+        </ScrollView>
+      </Sheet>
+
+      {/* MODO ENCUBIERTO: configurar clave + estilo, toggle de enviar, y ver original */}
+      <Sheet visible={sheet === "covert"} onClose={() => setSheet(null)}>
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 540 }}>
+          <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>🕊️ Modo encubierto</Text>
+          <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 14 }}>Tu mensaje viaja cifrado, disfrazado de texto normal. Quien lo vea por WhatsApp lee un poema; {name} con la misma clave lo ve descifrado. ¿No tiene Pipe? Puede descifrar en pipe.one/decodificar.</Text>
+          {covertStyle ? (
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: theme.bg, borderRadius: 12, padding: 13, marginBottom: 16 }}>
+              <Text style={{ fontSize: 15.5, color: theme.ink, fontWeight: "700" }}>Enviar encubierto</Text>
+              <Switch value={covertOn} onValueChange={setCovertOn} trackColor={{ true: theme.accent }} />
+            </View>
+          ) : null}
+          <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, marginBottom: 6 }}>{covertStyle ? "CAMBIAR CLAVE" : "CLAVE COMPARTIDA"}</Text>
+          <TextInput value={covPass} onChangeText={(v) => { setCovPass(v); covPreview(v, covSel) }} placeholder="Ej. nuestro café 2019" placeholderTextColor={theme.muted2} autoCapitalize="none" autoCorrect={false} style={{ backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 12, fontSize: 15, color: theme.ink, marginBottom: 10 }} />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+            {((covCfg && covCfg.styles) || []).map((s) => (
+              <TouchableOpacity key={s.id} onPress={() => { setCovSel(s.id); covPreview(covPass, s.id) }} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: covSel === s.id ? theme.accent : theme.bg }}>
+                <Text style={{ color: covSel === s.id ? "#fff" : theme.muted, fontWeight: "700", fontSize: 12.5 }}>{s.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {covPrev ? <View style={{ backgroundColor: theme.bg, borderRadius: 12, padding: 12, marginBottom: 14 }}><Text style={{ fontSize: 11, color: theme.muted2, marginBottom: 4 }}>Vista previa</Text><Text style={{ fontSize: 13.5, color: theme.ink, lineHeight: 19 }}>{covPrev}</Text></View> : null}
+          <TouchableOpacity onPress={covSave} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>{covertStyle ? "Guardar cambios" : "Activar modo encubierto"}</Text></TouchableOpacity>
+          {covertStyle ? <TouchableOpacity onPress={covDisable} style={{ paddingVertical: 12, alignItems: "center", marginTop: 2 }}><Text style={{ color: theme.urgent, fontWeight: "700" }}>Desactivar</Text></TouchableOpacity> : null}
         </ScrollView>
       </Sheet>
     </KeyboardAvoidingView>

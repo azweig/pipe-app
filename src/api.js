@@ -63,7 +63,11 @@ export const importWhatsApp = (fileUri, { name = "", order = "auto", tz = 0, gro
 export const getThreads = () => api("/api/threads?limit=200")
 export const getThread = (key) => api("/api/thread?key=" + encodeURIComponent(key) + "&limit=60")
 export const getTargets = (key) => api("/api/thread/targets?key=" + encodeURIComponent(key))
-export const sendMsg = (key, text, t) => api("/api/send", { method: "POST", body: JSON.stringify({ key, text, channel: t && t.channel, target: t && t.target }) })
+export const sendMsg = (key, text, t, covert) => api("/api/send", { method: "POST", body: JSON.stringify({ key, text, channel: t && t.channel, target: t && t.target, covert: !!covert }) })
+// modo encubierto ("El Santo"): config por-contacto + preview en vivo
+export const getCovertCfg = (key) => api("/api/covert/config?key=" + encodeURIComponent(key))
+export const setCovertCfg = (key, pass, style) => api("/api/covert/config", { method: "POST", body: JSON.stringify({ key, pass, style }) })
+export const previewCovert = (text, pass, style) => api("/api/covert/preview", { method: "POST", body: JSON.stringify({ text, pass, style }) })
 export const suggestReply = (key) => api("/api/thread/suggest-reply?key=" + encodeURIComponent(key))
 export const summarizeChat = (key, range = "all") => api("/api/thread/summarize?key=" + encodeURIComponent(key) + "&range=" + range)
 export const correctText = async (text, channel) => {
