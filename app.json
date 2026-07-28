@@ -38,7 +38,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Pipe accede a tus fotos para que puedas enviarlas en los chats."
+          "photosPermission": "Pipe accede a tus fotos para que puedas enviarlas en los chats.",
+          "cameraPermission": "Pipe usa la cámara para que puedas sacar y enviar fotos o videos."
         }
       ],
       [

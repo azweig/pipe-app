@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react"
-import { View, Text, TextInput, TouchableOpacity, FlatList, ScrollView, RefreshControl, StatusBar } from "react-native"
+import { View, Text, TextInput, TouchableOpacity, FlatList, ScrollView, RefreshControl, StatusBar, BackHandler } from "react-native"
 import Swipeable from "react-native-gesture-handler/Swipeable"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import AsyncStorage from "@react-native-async-storage/async-storage"
@@ -36,6 +36,16 @@ export default function Inbox({ navigation }) {
   const [refreshing, setRefreshing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState("")
+
+  // botón "atrás" del celular en la bandeja: si hay búsqueda o un filtro de tab activo, lo LIMPIA (no sale de la app). Solo sale si no hay nada que limpiar.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (q) { setQ(""); return true }
+      if (tab !== "todo") { setTab("todo"); return true }
+      return false
+    })
+    return () => sub.remove()
+  }, [q, tab])
 
   async function createEspacio() {
     const v = newName.trim(); if (!v) return

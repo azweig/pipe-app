@@ -157,6 +157,17 @@ export default function Conversation({ route, navigation }) {
     for (const a of res.assets) { const isVid = a.type === "video"; await sendOneMedia({ uri: a.uri, mime: a.mimeType || (isVid ? "video/mp4" : "image/jpeg"), name: a.fileName || "archivo", kind: isVid ? "video" : "image" }) }
     setTimeout(load, 900)
   }
+  // #2: sacar una foto (o video) con la CÁMARA y mandarla
+  async function takePhoto() {
+    setSheet(null)
+    const perm = await ImagePicker.requestCameraPermissionsAsync().catch(() => null)
+    if (!perm || !perm.granted) return Alert.alert("Cámara", "Necesito permiso de cámara para tomar la foto.")
+    const res = await ImagePicker.launchCameraAsync({ mediaTypes: ["images", "videos"], quality: 0.85 })
+    if (res.canceled || !res.assets || !res.assets[0]) return
+    const a = res.assets[0], isVid = a.type === "video"
+    await sendOneMedia({ uri: a.uri, mime: a.mimeType || (isVid ? "video/mp4" : "image/jpeg"), name: a.fileName || (isVid ? "video.mp4" : "foto.jpg"), kind: isVid ? "video" : "image" })
+    setTimeout(load, 900)
+  }
   async function pickDoc() {
     setSheet(null)
     const res = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true })
@@ -277,7 +288,8 @@ export default function Conversation({ route, navigation }) {
       {/* ── SHEETS ── */}
       <Sheet visible={sheet === "attach"} onClose={() => setSheet(null)}>
         <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 12 }}>Adjuntar</Text>
-        <TouchableOpacity onPress={pickImages} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center" }}><Text style={{ fontSize: 22 }}>🖼</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Fotos y videos</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Deslizá para elegir varios</Text></View></TouchableOpacity>
+        <TouchableOpacity onPress={takePhoto} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center" }}><Text style={{ fontSize: 22 }}>📷</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Cámara</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Sacá una foto o video</Text></View></TouchableOpacity>
+        <TouchableOpacity onPress={pickImages} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>🖼</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Fotos y videos</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Deslizá para elegir varios</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={pickDoc} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>📄</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Archivo</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>PDF, documentos, etc.</Text></View></TouchableOpacity>
       </Sheet>
 
