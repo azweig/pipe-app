@@ -68,6 +68,8 @@ export const sendMsg = (key, text, t, covert) => api("/api/send", { method: "POS
 export const getCovertCfg = (key) => api("/api/covert/config?key=" + encodeURIComponent(key))
 export const setCovertCfg = (key, pass, style) => api("/api/covert/config", { method: "POST", body: JSON.stringify({ key, pass, style }) })
 export const previewCovert = (text, pass, style) => api("/api/covert/preview", { method: "POST", body: JSON.stringify({ text, pass, style }) })
+// #5: transcribir + resumir un video/audio/imagen (traducido al español)
+export const summarizeMediaMsg = (id) => api("/api/media/summarize", { method: "POST", body: JSON.stringify({ id }) })
 export const suggestReply = (key) => api("/api/thread/suggest-reply?key=" + encodeURIComponent(key))
 export const summarizeChat = (key, range = "all") => api("/api/thread/summarize?key=" + encodeURIComponent(key) + "&range=" + range)
 export const correctText = async (text, channel) => {

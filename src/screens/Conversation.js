@@ -9,7 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThread, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert, getBase } from "../api"
+import { getThread, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg } from "../api"
 import { hhmm, color, preview } from "../util"
 import Avatar from "../components/Avatar"
 import MediaBubble from "../components/MediaBubble"
@@ -46,6 +46,7 @@ export default function Conversation({ route, navigation }) {
   const [replyTo, setReplyTo] = useState(null)
   const [sheet, setSheet] = useState(null) // 'menu' | 'target' | 'ai' | 'forward' | 'opts' | 'summary'
   const [menuItem, setMenuItem] = useState(null)
+  const [mediaSum, setMediaSum] = useState(null) // #5: {loading}|{summary,transcript,lang}|{error}
   const [fwd, setFwd] = useState(null) // { item, list, q }
   const [opts, setOpts] = useState(null) // { corrected, original, alternative }
   const [summary, setSummary] = useState(null)
@@ -206,6 +207,12 @@ export default function Conversation({ route, navigation }) {
   }
 
   const openMenu = (item) => { setMenuItem(item); setSheet("menu") }
+  // #5: transcribir + resumir el media del mensaje (traducido al español)
+  async function mediaSummarize(item) {
+    setSheet(null); setMediaSum({ loading: true })
+    const r = await summarizeMediaMsg(item.id).catch(() => null)
+    setMediaSum(!r || r.error ? { error: (r && r.error) || "No se pudo procesar el archivo." } : r)
+  }
   const startReply = (item) => { setReplyTo({ name: item.dir === "out" ? "Vos" : (item.name || "Mensaje"), text: preview(item).slice(0, 160) }); setSheet(null) }
 
   const renderItem = ({ item }) => {
@@ -308,6 +315,24 @@ export default function Conversation({ route, navigation }) {
         <Text style={{ color: theme.muted, marginBottom: 12, fontSize: 13 }}><Text style={{ fontWeight: "700" }}>{menuItem ? (menuItem.dir === "out" ? "Vos" : menuItem.name) : ""}</Text> · {menuItem ? preview(menuItem).slice(0, 70) : ""}</Text>
         <TouchableOpacity onPress={() => startReply(menuItem)} style={{ paddingVertical: 14, flexDirection: "row", gap: 12 }}><Text style={{ fontSize: 17 }}>↩️</Text><Text style={{ fontSize: 16, color: theme.ink }}>{t("reply")}</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => forwardStart(menuItem)} style={{ paddingVertical: 14, flexDirection: "row", gap: 12, borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 17 }}>↪</Text><Text style={{ fontSize: 16, color: theme.ink }}>{t("forward")}</Text></TouchableOpacity>
+        {menuItem && menuItem.media && /^(video|audio|image)$/.test(menuItem.mediaType || "") ? (
+          <TouchableOpacity onPress={() => mediaSummarize(menuItem)} style={{ paddingVertical: 14, flexDirection: "row", gap: 12, borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 17 }}>🌐</Text><Text style={{ fontSize: 16, color: theme.ink }}>Transcribir y resumir</Text></TouchableOpacity>
+        ) : null}
+      </Sheet>
+
+      {/* #5: resultado de transcribir+resumir */}
+      <Sheet visible={!!mediaSum} onClose={() => setMediaSum(null)}>
+        {mediaSum && mediaSum.loading ? (
+          <View style={{ alignItems: "center", paddingVertical: 24 }}><ActivityIndicator color={theme.accent} /><Text style={{ color: theme.muted, marginTop: 12 }}>Transcribiendo y resumiendo…</Text></View>
+        ) : mediaSum && mediaSum.error ? (
+          <View style={{ paddingVertical: 10 }}><Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 8 }}>No se pudo</Text><Text style={{ color: theme.muted, fontSize: 15 }}>{mediaSum.error}</Text></View>
+        ) : mediaSum ? (
+          <ScrollView style={{ maxHeight: 520 }}>
+            <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 10 }}>🌐 Resumen{mediaSum.lang && mediaSum.lang !== "es" ? `  (${mediaSum.lang}→es)` : ""}</Text>
+            <Text style={{ fontSize: 15.5, color: theme.ink, lineHeight: 22 }}>{mediaSum.summary}</Text>
+            {mediaSum.transcript ? (<><Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, marginTop: 16, marginBottom: 6 }}>TRANSCRIPCIÓN</Text><Text style={{ fontSize: 13.5, color: theme.muted, lineHeight: 19 }}>{mediaSum.transcript}</Text></>) : null}
+          </ScrollView>
+        ) : null}
       </Sheet>
 
       <Sheet visible={sheet === "target"} onClose={() => setSheet(null)}>
