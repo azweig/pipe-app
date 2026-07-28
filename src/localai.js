@@ -41,10 +41,12 @@ export async function uninstall() {
   try { await AsyncStorage.multiSet([["localai.correct", "0"], ["localai.stt", "0"]]) } catch {}
 }
 
-// Los módulos nativos (llama.rn / whisper.rn) son OPCIONALES y pueden NO estar en este build (IA local = build aparte con esos libs).
-// Nombre COMPUTADO (array.join) → Metro NO intenta resolverlos en build → la app COMPILA sin ellos; si faltan, la IA local se auto-oculta.
-async function loadNative(kind) { try { const name = (kind === "llm" ? ["llama", "rn"] : ["whisper", "rn"]).join("."); return await import(name) } catch { return null } }
-export async function nativeAvailable() { return !!(await loadNative("llm")) }
+// Los módulos nativos (llama.rn / whisper.rn) son OPCIONALES. Metro exige que import() tenga un string literal → si los importáramos
+// acá y NO están instalados, el bundle FALLA. Por eso este build NO los referencia (loadNative devuelve null) → la app compila sin
+// ellos y la IA local se auto-oculta (nativeAvailable=false). Para habilitarla: instalá llama.rn+whisper.rn y usá un import estático
+// (`import { initLlama } from "llama.rn"`) en llmCtx/sttCtx — ver SETUP-LOCALAI.md. Es un build aparte, a propósito.
+async function loadNative() { return null }
+export async function nativeAvailable() { return false }
 
 // ── CORRECCIÓN (llama.rn + Qwen3-0.6B) ── mismo contrato que el server: {original, corrected, alternative, failed?}
 let _llm = null
