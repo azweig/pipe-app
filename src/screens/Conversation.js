@@ -348,30 +348,30 @@ export default function Conversation({ route, navigation }) {
         </ScrollView>
       </Sheet>
 
-      {/* MODO ENCUBIERTO: configurar clave + estilo, toggle de enviar, y ver original */}
+      {/* MODO ENCUBIERTO: clave + estilo, botón SIEMPRE visible (antes de la preview), preview recortada al final */}
       <Sheet visible={sheet === "covert"} onClose={() => setSheet(null)}>
-        <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 540 }}>
+        <View>
           <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>🕊️ Modo encubierto</Text>
-          <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 14 }}>Tu mensaje viaja cifrado, disfrazado de texto normal. Quien lo vea por WhatsApp lee un poema; {name} con la misma clave lo ve descifrado. ¿No tiene Pipe? Puede descifrar en pipe.one/decodificar.</Text>
+          <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 12, lineHeight: 17 }}>Tu mensaje viaja cifrado, disfrazado de texto normal (poema, cuento…). {name} con la misma clave lo ve descifrado. ¿No tiene Pipe? → pipe.one/decodificar</Text>
           {covertStyle ? (
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: theme.bg, borderRadius: 12, padding: 13, marginBottom: 16 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: theme.bg, borderRadius: 12, padding: 13, marginBottom: 12 }}>
               <Text style={{ fontSize: 15.5, color: theme.ink, fontWeight: "700" }}>Enviar encubierto</Text>
               <Switch value={covertOn} onValueChange={setCovertOn} trackColor={{ true: theme.accent }} />
             </View>
           ) : null}
           <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, marginBottom: 6 }}>{covertStyle ? "CAMBIAR CLAVE" : "CLAVE COMPARTIDA"}</Text>
-          <TextInput value={covPass} onChangeText={(v) => { setCovPass(v); covPreview(v, covSel) }} placeholder="Ej. nuestro café 2019" placeholderTextColor={theme.muted2} autoCapitalize="none" autoCorrect={false} style={{ backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 12, fontSize: 15, color: theme.ink, marginBottom: 10 }} />
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          <TextInput value={covPass} onChangeText={(v) => { setCovPass(v); covPreview(v, covSel) }} placeholder="Ej. nuestro café 2019" placeholderTextColor={theme.muted2} autoCapitalize="none" autoCorrect={false} returnKeyType="done" style={{ backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 12, fontSize: 15, color: theme.ink, marginBottom: 10 }} />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
             {((covCfg && covCfg.styles) || []).map((s) => (
               <TouchableOpacity key={s.id} onPress={() => { setCovSel(s.id); covPreview(covPass, s.id) }} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: covSel === s.id ? theme.accent : theme.bg }}>
                 <Text style={{ color: covSel === s.id ? "#fff" : theme.muted, fontWeight: "700", fontSize: 12.5 }}>{s.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
-          {covPrev ? <View style={{ backgroundColor: theme.bg, borderRadius: 12, padding: 12, marginBottom: 14 }}><Text style={{ fontSize: 11, color: theme.muted2, marginBottom: 4 }}>Vista previa</Text><Text style={{ fontSize: 13.5, color: theme.ink, lineHeight: 19 }}>{covPrev}</Text></View> : null}
-          <TouchableOpacity onPress={covSave} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>{covertStyle ? "Guardar cambios" : "Activar modo encubierto"}</Text></TouchableOpacity>
-          {covertStyle ? <TouchableOpacity onPress={covDisable} style={{ paddingVertical: 12, alignItems: "center", marginTop: 2 }}><Text style={{ color: theme.urgent, fontWeight: "700" }}>Desactivar</Text></TouchableOpacity> : null}
-        </ScrollView>
+          <TouchableOpacity onPress={covSave} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 14, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>{covertStyle ? "Guardar cambios" : "Activar modo encubierto"}</Text></TouchableOpacity>
+          {covertStyle ? <TouchableOpacity onPress={covDisable} style={{ paddingVertical: 11, alignItems: "center", marginTop: 2 }}><Text style={{ color: theme.urgent, fontWeight: "700" }}>Desactivar</Text></TouchableOpacity> : null}
+          {covPrev ? <View style={{ backgroundColor: theme.bg, borderRadius: 12, padding: 12, marginTop: 12 }}><Text style={{ fontSize: 11, color: theme.muted2, marginBottom: 4 }}>Vista previa (así se ve)</Text><Text numberOfLines={4} style={{ fontSize: 13, color: theme.ink, lineHeight: 18 }}>{covPrev}</Text></View> : null}
+        </View>
       </Sheet>
     </KeyboardAvoidingView>
   )
