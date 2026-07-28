@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react"
-import { View, Text, TextInput, TouchableOpacity, Pressable, FlatList, Platform, ActivityIndicator, Alert, ScrollView, Switch } from "react-native"
+import { View, Text, TextInput, TouchableOpacity, Pressable, FlatList, Platform, ActivityIndicator, Alert, ScrollView, Switch, Linking } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import * as Haptics from "expo-haptics"
 import { useAudioRecorder, RecordingPresets, AudioModule, setAudioModeAsync } from "expo-audio"
@@ -17,6 +17,17 @@ import Sheet from "../components/Sheet"
 
 const PLACEHOLDER_RE = /^(🖼|📹|🎤|📄|🌟|📎|📍|👤|🖼️)/
 const durTxt = (s) => Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
+// #4a: texto del mensaje con los links CLICKEABLES (antes se veía plano). Parte por URL y hace tap → abrir en el navegador.
+function LinkedText({ text, style }) {
+  const parts = String(text || "").split(/(https?:\/\/[^\s]+)/g)
+  return (
+    <Text style={style}>
+      {parts.map((p, i) => /^https?:\/\//.test(p)
+        ? <Text key={i} style={{ color: theme.accent, textDecorationLine: "underline" }} onPress={() => Linking.openURL(p).catch(() => {})}>{p}</Text>
+        : p)}
+    </Text>
+  )
+}
 
 export default function Conversation({ route, navigation }) {
   const { convKey, name, photo, draft } = route.params
@@ -211,7 +222,7 @@ export default function Conversation({ route, navigation }) {
               <Text style={{ fontSize: 15.5, color: theme.ink, lineHeight: 20 }}>{item.covert.text}</Text>
               <TouchableOpacity onPress={() => covReveal(item)} hitSlop={6}><Text style={{ fontSize: 11, color: theme.accent, marginTop: 3 }}>🕊️ descifrado · ver original</Text></TouchableOpacity>
             </View>
-          ) : (showText ? <Text style={{ fontSize: 15.5, color: theme.ink, lineHeight: 20, marginTop: hasMedia ? 5 : 0, paddingHorizontal: hasMedia ? 5 : 0 }}>{item.text}</Text> : null)}
+          ) : (showText ? <LinkedText text={item.text} style={{ fontSize: 15.5, color: theme.ink, lineHeight: 20, marginTop: hasMedia ? 5 : 0, paddingHorizontal: hasMedia ? 5 : 0 }} /> : null)}
           <Text style={{ fontSize: 10, color: out ? "#6b9a80" : theme.muted2, alignSelf: "flex-end", marginTop: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{hhmm(item.ts)}{out ? " ✓✓" : ""}</Text>
         </View>
       </Pressable>
