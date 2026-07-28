@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from "react"
-import { View, Text, TextInput, TouchableOpacity, Pressable, FlatList, Platform, ActivityIndicator, Alert, ScrollView, Switch, Linking } from "react-native"
+import { View, Text, TextInput, TouchableOpacity, Pressable, FlatList, Platform, ActivityIndicator, Alert, ScrollView, Switch, Linking, Image } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import * as Haptics from "expo-haptics"
 import { useAudioRecorder, RecordingPresets, AudioModule, setAudioModeAsync } from "expo-audio"
 import * as ImagePicker from "expo-image-picker"
 import * as DocumentPicker from "expo-document-picker"
+// #3 edición de media: recortar foto (crop nativo), collage (view-shot) y recortar video (trim nativo)
+import { captureRef } from "react-native-view-shot"
+import VideoTrim, { showEditor as trimShowEditor } from "react-native-video-trim"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
@@ -55,6 +58,10 @@ export default function Conversation({ route, navigation }) {
   const [recDur, setRecDur] = useState(0)
   const listRef = useRef(null)
   const recStart = useRef(0), recTimer = useRef(null)
+  // #3: collage — mientras hay uris, se monta un lienzo oculto que se captura con view-shot
+  const [collage, setCollage] = useState(null) // { uris:[], loaded:0 } | null
+  const collageRef = useRef(null)
+  const trimTarget = useRef(null) // el target del contacto para el video ya recortado (los eventos del trim llegan async)
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
   const cacheKey = "conv:" + convKey
 
@@ -156,9 +163,9 @@ export default function Conversation({ route, navigation }) {
   }
 
   // ── ADJUNTAR (fotos/videos multi-selección + archivos) ──
-  async function sendOneMedia({ uri, mime, name, kind }) {
+  async function sendOneMedia({ uri, mime, name, kind, targetOverride }) {
     const id = optimistic({ mediaType: kind, media: kind === "file" ? null : uri, text: kind === "video" ? "📹 Video" : kind === "image" ? "🖼 Imagen" : "📄 " + (name || "Archivo") })
-    const r = await sendMediaFile(convKey, uri, mime, name || "archivo", target)
+    const r = await sendMediaFile(convKey, uri, mime, name || "archivo", targetOverride || target)
     if (r && r.error) { setItems((x) => x.filter((m) => m.id !== id)); Alert.alert("No se pudo enviar", r.error) }
   }
   async function pickImages() {
@@ -187,6 +194,69 @@ export default function Conversation({ route, navigation }) {
     for (const a of res.assets) await sendOneMedia({ uri: a.uri, mime: a.mimeType || "application/octet-stream", name: a.name || "archivo", kind: "file" })
     setTimeout(load, 900)
   }
+
+  // ── #3 EDICIÓN DE MEDIA ──
+  // Recortar/rotar una foto antes de enviarla (crop nativo del picker; una sola imagen).
+  async function cropPhoto() {
+    setSheet(null)
+    try { await ImagePicker.requestMediaLibraryPermissionsAsync() } catch {}
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, quality: 0.9 })
+    if (res.canceled || !res.assets || !res.assets[0]) return
+    const a = res.assets[0]
+    await sendOneMedia({ uri: a.uri, mime: a.mimeType || "image/jpeg", name: a.fileName || "foto.jpg", kind: "image" })
+    setTimeout(load, 900)
+  }
+  // Collage: elegí 2–6 fotos → se arman en una grilla y se envía como una sola imagen.
+  async function pickCollage() {
+    setSheet(null)
+    try { await ImagePicker.requestMediaLibraryPermissionsAsync() } catch {}
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsMultipleSelection: true, selectionLimit: 6, quality: 0.9 })
+    if (res.canceled || !res.assets || res.assets.length < 2) {
+      if (res.assets && res.assets.length === 1) return Alert.alert("Collage", "Elegí al menos 2 fotos para el collage.")
+      return
+    }
+    setCollage({ uris: res.assets.slice(0, 6).map((a) => a.uri), loaded: 0 })
+  }
+  // Recortar un video: abre el editor nativo; el resultado llega por el evento onFinishTrimming (ver useEffect).
+  async function trimVideo() {
+    setSheet(null)
+    try { await ImagePicker.requestMediaLibraryPermissionsAsync() } catch {}
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["videos"], quality: 1 })
+    if (res.canceled || !res.assets || !res.assets[0]) return
+    trimTarget.current = target
+    try { trimShowEditor(res.assets[0].uri, { saveToPhoto: false, removeAfterSavedToPhoto: true, enableCancelDialog: false }) }
+    catch (e) { Alert.alert("Recortar video", "No pude abrir el editor: " + (e.message || e)) }
+  }
+
+  // El editor de video es asíncrono: escuchamos sus eventos una sola vez y enviamos el clip recortado.
+  useEffect(() => {
+    const done = VideoTrim.onFinishTrimming(async (e) => {
+      const uri = e && (e.outputPath || e.path)
+      if (!uri) return
+      const t = trimTarget.current; trimTarget.current = null
+      await sendOneMedia({ uri: uri.startsWith("file://") ? uri : "file://" + uri, mime: "video/mp4", name: "recorte.mp4", kind: "video", targetOverride: t })
+      setTimeout(load, 900)
+    })
+    const err = VideoTrim.onError((e) => { trimTarget.current = null; Alert.alert("Recortar video", "No se pudo recortar el video.") })
+    return () => { try { done && done.remove(); err && err.remove() } catch {} }
+  }, [convKey, target])
+
+  // Captura el collage una vez que TODAS las fotos cargaron, y lo envía.
+  useEffect(() => {
+    if (!collage || collage.loaded < collage.uris.length || !collageRef.current) return
+    let alive = true
+    ;(async () => {
+      try {
+        await new Promise((r) => setTimeout(r, 120)) // deja pintar el último frame
+        const uri = await captureRef(collageRef, { format: "jpg", quality: 0.9, result: "tmpfile" })
+        if (!alive) return
+        await sendOneMedia({ uri: uri.startsWith("file://") ? uri : "file://" + uri, mime: "image/jpeg", name: "collage.jpg", kind: "image" })
+        setTimeout(load, 900)
+      } catch (e) { Alert.alert("Collage", "No pude armar el collage.") }
+      finally { if (alive) setCollage(null) }
+    })()
+    return () => { alive = false }
+  }, [collage])
 
   // ── IA: sugerir respuesta / resumir ──
   async function aiSuggest() { setSheet(null); setBusy("Redactando una respuesta…"); const r = await suggestReply(convKey).catch(() => null); setBusy(null); if (r && r.draft) setText(r.draft); else Alert.alert("IA", "No pude sugerir una respuesta ahora.") }
@@ -303,11 +373,31 @@ export default function Conversation({ route, navigation }) {
         </View>
       ) : null}
 
+      {/* #3: lienzo OCULTO del collage — se dibuja fuera de pantalla y se captura con view-shot cuando cargan todas las fotos */}
+      {collage ? (() => {
+        const n = collage.uris.length, cols = n <= 1 ? 1 : n <= 4 ? 2 : 3, rows = Math.ceil(n / cols)
+        const SIZE = 300, G = 3, cw = Math.floor(SIZE / cols), ch = Math.floor(SIZE / rows)
+        const bump = () => setCollage((c) => (c ? { ...c, loaded: c.loaded + 1 } : c))
+        return (
+          <View style={{ position: "absolute", left: -10000, top: 0 }} pointerEvents="none">
+            <View ref={collageRef} collapsable={false} style={{ width: cols * cw, height: rows * ch, backgroundColor: "#fff", flexDirection: "row", flexWrap: "wrap" }}>
+              {collage.uris.map((u, i) => (
+                <Image key={i} source={{ uri: u }} resizeMode="cover" onLoad={bump} onError={bump}
+                  style={{ width: cw - G, height: ch - G, margin: G / 2, backgroundColor: "#eee" }} />
+              ))}
+            </View>
+          </View>
+        )
+      })() : null}
+
       {/* ── SHEETS ── */}
       <Sheet visible={sheet === "attach"} onClose={() => setSheet(null)}>
         <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 12 }}>Adjuntar</Text>
         <TouchableOpacity onPress={takePhoto} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center" }}><Text style={{ fontSize: 22 }}>📷</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Cámara</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Sacá una foto o video</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={pickImages} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>🖼</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Fotos y videos</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Deslizá para elegir varios</Text></View></TouchableOpacity>
+        <TouchableOpacity onPress={cropPhoto} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>✂️</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Recortar foto</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Cortá y enderezá antes de enviar</Text></View></TouchableOpacity>
+        <TouchableOpacity onPress={pickCollage} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>🧩</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Collage</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Uní 2 a 6 fotos en una sola</Text></View></TouchableOpacity>
+        <TouchableOpacity onPress={trimVideo} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>🎬</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Recortar video</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Elegí el pedazo que querés mandar</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={pickDoc} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>📄</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Archivo</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>PDF, documentos, etc.</Text></View></TouchableOpacity>
       </Sheet>
 

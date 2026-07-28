@@ -10,6 +10,9 @@ The native iOS/Android app for **[Pipe](https://pipe.one)** — your self-hostab
 - **One inbox, every channel** — WhatsApp, email, Telegram, Signal, Slack and more, one thread per person.
 - **AI that helps** — draft replies in your voice, summaries, "who needs a reply".
 - **Voice notes** — record and send, or dictate → transcribe → send.
+- **Send anything** — camera (photo/video), photos & videos, files. Edit before sending: **crop** a photo, build a **collage** of 2–6 photos, or **trim** a video down to the part you want.
+- **Transcribe & summarize media** — long-press a video, voice note or image → it transcribes (auto-detecting the language) and gives you a **Spanish summary**, even if the clip is in another language.
+- **Clickable links** — URLs in messages (meeting links, etc.) are tappable and open in the browser.
 - **Text review before sending** — spelling/grammar polish with a clear "send as-is" option.
 - **Spaces** — group conversations by rules (a number, an email domain, a name) and manage them from the app: create, rename, add/remove rules, delete.
 - **Import WhatsApp history** — bring old chats in from the phone with no PC and no root: in WhatsApp, *Export chat → Without media*, then upload the `.txt` in **Settings**. Parsed and merged into the thread, de-duplicated. (Per-chat — WhatsApp has no "export all".)
@@ -19,7 +22,7 @@ The native iOS/Android app for **[Pipe](https://pipe.one)** — your self-hostab
 
 ## Stack
 
-Expo `~57` · React Native `0.86` · React Navigation · `expo-audio` · `expo-file-system` · optional `llama.rn` + `whisper.rn` for on-device inference.
+Expo `~57` · React Native `0.86` · React Navigation · `expo-audio` · `expo-file-system` · `expo-image-picker` / `expo-image-manipulator` · `react-native-view-shot` (collage) · `react-native-video-trim` (trim) · optional `llama.rn` + `whisper.rn` for on-device inference.
 
 ## Quick start
 
