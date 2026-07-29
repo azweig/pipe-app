@@ -62,6 +62,9 @@ export const importWhatsApp = (fileUri, { name = "", order = "auto", tz = 0, gro
 
 export const getThreads = () => api("/api/threads?limit=200")
 export const getThread = (key) => api("/api/thread?key=" + encodeURIComponent(key) + "&limit=60")
+// SYNC edit-aware: solo los mensajes NUEVOS o editados (rev > sinceRev) → el resto ya está cacheado en el celular
+export const getThreadDelta = (key, sinceRev = 0) => api("/api/thread/delta?key=" + encodeURIComponent(key) + "&sinceRev=" + (sinceRev || 0))
+export const getThreadPage = (key, before) => api("/api/thread?key=" + encodeURIComponent(key) + "&before=" + (before || 0) + "&limit=60")
 export const getTargets = (key) => api("/api/thread/targets?key=" + encodeURIComponent(key))
 export const sendMsg = (key, text, t, covert) => api("/api/send", { method: "POST", body: JSON.stringify({ key, text, channel: t && t.channel, target: t && t.target, covert: !!covert }) })
 // modo encubierto ("El Santo"): config por-contacto + preview en vivo

@@ -12,7 +12,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThread, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg } from "../api"
+import { getThread, getThreadDelta, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg } from "../api"
+import { loadThread, saveThread } from "../store" // cache local (SQLite): historia completa en el celular, de la red solo el delta
 import { hhmm, color, preview } from "../util"
 import Avatar from "../components/Avatar"
 import MediaBubble from "../components/MediaBubble"
@@ -64,18 +65,50 @@ export default function Conversation({ route, navigation }) {
   const collageRef = useRef(null)
   const trimTarget = useRef(null) // el target del contacto para el video ya recortado (los eventos del trim llegan async)
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
-  const cacheKey = "conv:" + convKey
+  const sync = useRef({ maxRev: 0, ready: false }) // estado de sincronización incremental por conversación
+
+  // merge de items nuevos/editados por id + dedup del envío optimista (el eco del server reemplaza la burbuja "opt-…")
+  const mergeItems = (cur, incoming) => {
+    const byId = new Map(cur.map((i) => [i.id, i]))
+    for (const it of incoming) {
+      byId.set(it.id, it)
+      if (it.dir === "out") for (const [id, o] of [...byId]) if (String(id).startsWith("opt-") && (o.text || "") === (it.text || "") && Math.abs((o.ts || 0) - (it.ts || 0)) < 120000) byId.delete(id)
+    }
+    return [...byId.values()].sort((a, b) => (a.ts || 0) - (b.ts || 0))
+  }
 
   const load = useCallback(async () => {
     try {
-      const d = await getThread(convKey)
-      setItems(d.items || []); setIsGroup(!!d.group); setCovertStyle(d.covert || null); if (!d.covert) setCovertOn(false); setLoading(false)
-      AsyncStorage.setItem(cacheKey, JSON.stringify((d.items || []).slice(-60))).catch(() => {})
+      if (sync.current.ready) {
+        // DELTA: solo lo nuevo/editado (rev > maxRev). El resto ya está en el SQLite del celular.
+        const d = await getThreadDelta(convKey, sync.current.maxRev)
+        if (d && d.maxRev != null) sync.current.maxRev = d.maxRev
+        if (d && Array.isArray(d.items) && d.items.length) {
+          setItems((cur) => mergeItems(cur, d.items))
+          saveThread(convKey, d.items, { maxRev: sync.current.maxRev })
+        }
+        setLoading(false)
+      } else {
+        // FULL (primer sync de la sesión): últimos 60 + metadata del hilo, y a partir de acá solo delta
+        const d = await getThread(convKey)
+        setItems(d.items || []); setIsGroup(!!d.group); setCovertStyle(d.covert || null); if (!d.covert) setCovertOn(false); setLoading(false)
+        sync.current = { maxRev: d.maxRev || 0, ready: true }
+        saveThread(convKey, d.items || [], { maxRev: d.maxRev || 0, group: !!d.group, covert: d.covert || null })
+      }
     } catch (e) { if (e && e.code === 401) navigation.replace("Login"); setLoading(false) }
   }, [convKey, navigation])
 
   useEffect(() => {
-    (async () => { try { const c = await AsyncStorage.getItem(cacheKey); if (c) { setItems(JSON.parse(c)); setLoading(false) } } catch {}; load() })()
+    sync.current = { maxRev: 0, ready: false };
+    (async () => {
+      // 1) pintar la historia cacheada en el celular (SQLite) al instante
+      const { items, meta } = await loadThread(convKey)
+      if (items.length) { setItems(items); setLoading(false) }
+      if (meta) { if (meta.group != null) setIsGroup(!!meta.group); if ("covert" in meta) { setCovertStyle(meta.covert || null); if (!meta.covert) setCovertOn(false) } }
+      // 2) sincronizar con la red: delta si ya tengo maxRev cacheado, full si no
+      if (meta && meta.maxRev) sync.current = { maxRev: meta.maxRev, ready: true }
+      load()
+    })()
     getTargets(convKey).then((t) => { const ts = (t && t.targets) || []; setTargets(ts); setTarget(ts[(t && t.default) || 0] || null) }).catch(() => {})
     if (draft) setText(draft) // borrador de IA precargado desde Home
     const iv = setInterval(load, 5000)
