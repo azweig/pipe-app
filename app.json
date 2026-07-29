@@ -52,7 +52,13 @@
           ]
         }
       ],
-      "expo-share-intent",
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["text/*", "image/*", "video/*"],
+          "androidMultiIntentFilters": ["image/*", "video/*"]
+        }
+      ],
       "@react-native-community/datetimepicker",
       "expo-asset"
     ]
