@@ -52,6 +52,7 @@ export default function Conversation({ route, navigation }) {
   const [mediaSum, setMediaSum] = useState(null) // #5: {loading}|{summary,transcript,lang}|{error}
   const [fwd, setFwd] = useState(null) // { item, list, q }
   const [opts, setOpts] = useState(null) // { corrected, original, alternative }
+  const [correctOn, setCorrectOn] = useState(true) // #2: corrección IA al enviar ON por defecto; se puede apagar (botón ✨) y se recuerda
   const [summary, setSummary] = useState(null)
   const [busy, setBusy] = useState(null) // texto de "cargando"
   const [rec, setRec] = useState(null) // 'voice' | 'ai'
@@ -119,7 +120,10 @@ export default function Conversation({ route, navigation }) {
   async function covDisable() { await setCovertCfg(convKey, "", "poema").catch(() => {}); setCovertStyle(null); setCovertOn(false); setSheet(null) }
   function covReveal(item) { Alert.alert("🕊️ Texto original", "Lo que ve quien NO tiene la clave (ej. por WhatsApp):\n\n" + (item.text || "")) }
   // al tocar enviar: muestra el popup con 3 opciones (corregido / tal cual / otra), como la web. Elegís y recién manda.
-  const onSend = () => { const t = text.trim(); if (t) showSendOptions(t) }
+  // #2: al enviar — si la corrección está ON, muestra las 3 opciones; si está OFF, manda TAL CUAL directo.
+  const onSend = () => { const t = text.trim(); if (!t) return; if (correctOn) showSendOptions(t); else { setText(""); doSend(t) } }
+  const toggleCorrect = () => { setCorrectOn((v) => { const nv = !v; AsyncStorage.setItem("pipe_correct", nv ? "1" : "0").catch(() => {}); return nv }) }
+  useEffect(() => { AsyncStorage.getItem("pipe_correct").then((v) => { if (v === "0") setCorrectOn(false) }).catch(() => {}) }, [])
 
   // ── OPCIONES DE IA (corregido/tal cual/otra) — usado por el mic IA ──
   async function showSendOptions(txt) {
@@ -353,7 +357,10 @@ export default function Conversation({ route, navigation }) {
           <TextInput value={text} onChangeText={setText} placeholder={covertOn ? "🕊️ Mensaje encubierto…" : (target && target.channel === "email" ? "Email…" : t("message_ph"))} placeholderTextColor={theme.muted2} multiline
             style={{ flex: 1, minHeight: 40, backgroundColor: "#fff", borderWidth: 1, borderColor: theme.line, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, fontSize: 15.5, maxHeight: 120, color: theme.ink }} />
           {text.trim() ? (
-            <TouchableOpacity onPress={onSend} style={round(theme.accent)}><Text style={{ color: "#fff", fontSize: 18 }}>➤</Text></TouchableOpacity>
+            <>
+              <TouchableOpacity onPress={toggleCorrect} accessibilityLabel="Corregir con IA al enviar" style={round(correctOn ? theme.accent : theme.bg, correctOn ? theme.accent : theme.line)}><Text style={{ fontSize: 15, color: correctOn ? "#fff" : theme.muted }}>✨</Text></TouchableOpacity>
+              <TouchableOpacity onPress={onSend} style={round(theme.accent)}><Text style={{ color: "#fff", fontSize: 18 }}>➤</Text></TouchableOpacity>
+            </>
           ) : (
             <>
               <TouchableOpacity onPress={() => setSheet("attach")} style={round(theme.bg, theme.line)}><Text style={{ fontSize: 18 }}>📎</Text></TouchableOpacity>
