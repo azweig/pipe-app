@@ -44,6 +44,57 @@ export default function Calendar({ navigation }) {
     if (isWeek && days.length) { const a = parseD(days[0]), b = parseD(days[days.length - 1]); return `${a.getDate()}–${b.getDate()} ${MES[b.getMonth()]}` }
     const base = parseD(d.base || d.today); return `${d.base === d.today ? "Hoy · " : ""}${base.getDate()} ${MES[base.getMonth()]}`
   }
+  // helpers para: hueco libre entre eventos, línea de "ahora", divisor entre días
+  const toMin = (t) => { const [h, m] = String(t || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0) }
+  const fmtDur = (min) => { const h = Math.floor(min / 60), m = min % 60; return h ? (m ? `${h} h ${m} m` : `${h} h`) : `${m} m` }
+  const now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes(), nowHHMM = pad(now.getHours()) + ":" + pad(now.getMinutes())
+  const RED = "#e2483d", AMBER = "#e0872b"
+  // arma las filas de un día: tarjetas + huecos libres (≥1h) + la línea de "ahora" (solo hoy) intercaladas
+  const dayNodes = (day) => {
+    const list = byDay[day] || []
+    const isToday = day === (d && d.today)
+    const out = []; let prevEnd = null, nowShown = false
+    list.forEach((e, i) => {
+      const start = toMin(e.t1)
+      if (isToday && !nowShown && start >= nowMin) { out.push(nowRow()); nowShown = true }
+      if (prevEnd != null && start - prevEnd >= 60) out.push(gapRow(i, start - prevEnd))
+      out.push(evCard(e))
+      prevEnd = Math.max(toMin(e.t2) || 0, start + (e.durationMin || 30))
+    })
+    if (isToday && !nowShown && list.length) out.push(nowRow()) // ya pasaron todos → "ahora" al final
+    return out
+  }
+  const nowRow = () => (
+    <View key="now" style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8, marginLeft: 2 }}>
+      <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: RED }} />
+      <Text style={{ fontSize: 11, fontWeight: "800", color: RED, letterSpacing: 0.3 }}>AHORA {nowHHMM}</Text>
+      <View style={{ flex: 1, height: 2, borderRadius: 1, backgroundColor: RED, opacity: 0.55 }} />
+    </View>
+  )
+  const gapRow = (i, min) => (
+    <View key={"gap" + i} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8, marginLeft: 2 }}>
+      <Text style={{ color: theme.muted2, fontSize: 12 }}>◎</Text>
+      <Text style={{ fontSize: 11.5, color: theme.muted2 }}>Hueco libre · {fmtDur(min)}</Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: theme.line }} />
+    </View>
+  )
+  const dayDivider = (day, first) => (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: first ? 0 : 4, marginBottom: 8 }}>
+      {!first ? <Text style={{ color: theme.accent, fontSize: 13 }}>▾</Text> : null}
+      <Text style={{ fontSize: 12.5, fontWeight: "800", color: theme.muted, textTransform: "capitalize" }}>{dayLabel(day)}</Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: theme.line }} />
+    </View>
+  )
+  const evCard = (e) => (
+    <TouchableOpacity key={e.id} activeOpacity={0.6} onPress={() => navigation.navigate("Meeting", { id: e.id })} style={{ backgroundColor: theme.card, borderRadius: 12, padding: 13, marginBottom: 8, flexDirection: "row", gap: 12, borderLeftWidth: 3, borderLeftColor: e.color || theme.accent }}>
+      <View style={{ alignItems: "center", minWidth: 46 }}><Text style={{ fontWeight: "800", color: theme.ink, fontSize: 14 }}>{e.t1}</Text><Text style={{ fontSize: 10.5, color: theme.muted2 }}>{e.t2}</Text></View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontWeight: "600", color: theme.ink, fontSize: 15 }}>{e.icon ? e.icon + " " : ""}{e.title}</Text>
+        {e.location ? <Text numberOfLines={1} style={{ fontSize: 12.5, color: theme.muted, marginTop: 2 }}>📍 {e.location}</Text> : null}
+        {e.nAtt ? <Text style={{ fontSize: 12, color: theme.muted2, marginTop: 2 }}>👥 {e.nAtt} {e.nAtt === 1 ? "persona" : "personas"}{e.prepReady ? " · ✨ preparado" : ""}</Text> : null}
+      </View>
+    </TouchableOpacity>
+  )
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}>
@@ -76,24 +127,18 @@ export default function Calendar({ navigation }) {
               <View style={{ flex: 1, backgroundColor: theme.card, borderRadius: 12, padding: 12, alignItems: "center" }}><Text style={{ fontSize: 22, fontWeight: "800", color: theme.ink }}>{k.count || 0}</Text><Text style={{ fontSize: 11, color: theme.muted }}>eventos</Text></View>
               <View style={{ flex: 1, backgroundColor: theme.card, borderRadius: 12, padding: 12, alignItems: "center" }}><Text style={{ fontSize: 22, fontWeight: "800", color: theme.ok }}>{k.freeH != null ? k.freeH + "h" : "—"}</Text><Text style={{ fontSize: 11, color: theme.muted }}>libre</Text></View>
               <View style={{ flex: 1, backgroundColor: theme.card, borderRadius: 12, padding: 12, alignItems: "center" }}><Text style={{ fontSize: 22, fontWeight: "800", color: theme.accent }}>{k.busyH != null ? k.busyH + "h" : "—"}</Text><Text style={{ fontSize: 11, color: theme.muted }}>ocupado</Text></View>
+              {k.overlaps != null ? (
+                <View style={{ flex: 1, backgroundColor: theme.card, borderRadius: 12, padding: 12, alignItems: "center" }}><Text style={{ fontSize: 22, fontWeight: "800", color: k.overlaps > 0 ? AMBER : theme.muted }}>{k.overlaps}</Text><Text style={{ fontSize: 11, color: theme.muted }}>{k.overlaps === 1 ? "se pisa" : "se pisan"}</Text></View>
+              ) : null}
             </View>
           ) : null}
 
           {days.length === 0 || evs.length === 0 ? (
             <Text style={{ textAlign: "center", color: theme.muted, marginTop: 30 }}>{t("no_events")}</Text>
-          ) : days.map((day) => (
+          ) : days.map((day, di) => (
             <View key={day} style={{ marginBottom: 14 }}>
-              {isWeek ? <Text style={{ fontSize: 12.5, fontWeight: "800", color: theme.muted, marginBottom: 6, textTransform: "capitalize" }}>{dayLabel(day)}</Text> : null}
-              {(byDay[day] || []).map((e) => (
-                <TouchableOpacity key={e.id} activeOpacity={0.6} onPress={() => navigation.navigate("Meeting", { id: e.id })} style={{ backgroundColor: theme.card, borderRadius: 12, padding: 13, marginBottom: 8, flexDirection: "row", gap: 12, borderLeftWidth: 3, borderLeftColor: e.color || theme.accent }}>
-                  <View style={{ alignItems: "center", minWidth: 46 }}><Text style={{ fontWeight: "800", color: theme.ink, fontSize: 14 }}>{e.t1}</Text><Text style={{ fontSize: 10.5, color: theme.muted2 }}>{e.t2}</Text></View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "600", color: theme.ink, fontSize: 15 }}>{e.icon ? e.icon + " " : ""}{e.title}</Text>
-                    {e.location ? <Text numberOfLines={1} style={{ fontSize: 12.5, color: theme.muted, marginTop: 2 }}>📍 {e.location}</Text> : null}
-                    {e.nAtt ? <Text style={{ fontSize: 12, color: theme.muted2, marginTop: 2 }}>👥 {e.nAtt} {e.nAtt === 1 ? "persona" : "personas"}{e.prepReady ? " · ✨ preparado" : ""}</Text> : null}
-                  </View>
-                </TouchableOpacity>
-              ))}
+              {isWeek ? dayDivider(day, di === 0) : null}
+              {dayNodes(day)}
               {isWeek && (byDay[day] || []).length === 0 ? <Text style={{ fontSize: 12.5, color: theme.muted2, marginLeft: 2 }}>libre</Text> : null}
             </View>
           ))}
