@@ -12,7 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThread, getThreadDelta, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg } from "../api"
+import { getThread, getThreadDelta, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg } from "../api"
 import { loadThread, saveThread } from "../store" // cache local (SQLite): historia completa en el celular, de la red solo el delta
 import { hhmm, color, preview } from "../util"
 import Avatar from "../components/Avatar"
@@ -42,6 +42,11 @@ export default function Conversation({ route, navigation }) {
   const [covertStyle, setCovertStyle] = useState(null) // estilo del modo encubierto si está configurado para este contacto (null = no)
   const [covertOn, setCovertOn] = useState(false)      // enviar el próximo mensaje encubierto (cifrado + disfrazado)
   const [covCfg, setCovCfg] = useState(null)           // {enabled, style, styles} para el sheet de config
+  const [apOn, setApOn] = useState(false)              // 🤖 ¿este contacto tiene piloto automático?
+  const [apCfg, setApCfg] = useState(null)             // config del piloto para el sheet
+  const [apMax, setApMax] = useState("")               // input de límite diario
+  const [apFb, setApFb] = useState(null)               // { id, original } → sheet de feedback
+  const [apBad, setApBad] = useState(false); const [apCorr, setApCorr] = useState("")
   const [covPass, setCovPass] = useState(""); const [covSel, setCovSel] = useState("poema"); const [covPrev, setCovPrev] = useState("")
   const [text, setText] = useState("")
   const [loading, setLoading] = useState(true)
@@ -91,7 +96,7 @@ export default function Conversation({ route, navigation }) {
       } else {
         // FULL (primer sync de la sesión): últimos 60 + metadata del hilo, y a partir de acá solo delta
         const d = await getThread(convKey)
-        setItems(d.items || []); setIsGroup(!!d.group); setCovertStyle(d.covert || null); if (!d.covert) setCovertOn(false); setLoading(false)
+        setItems(d.items || []); setIsGroup(!!d.group); setCovertStyle(d.covert || null); if (!d.covert) setCovertOn(false); setApOn(!!d.autopilot); setLoading(false)
         sync.current = { maxRev: d.maxRev || 0, ready: true }
         saveThread(convKey, d.items || [], { maxRev: d.maxRev || 0, group: !!d.group, covert: d.covert || null })
       }
@@ -137,6 +142,20 @@ export default function Conversation({ route, navigation }) {
     const cfg = await getCovertCfg(convKey).catch(() => null)
     const c = cfg || { enabled: false, style: "poema", styles: [] }
     setCovCfg(c); setCovSel(c.style || "poema"); setCovPass(""); setCovPrev(""); setSheet("covert")
+  }
+  // 🤖 piloto automático por contacto
+  async function openAutopilot() {
+    const c = (await getAutopilotCfg(convKey).catch(() => null)) || { enabled: false, maxPerDay: 0 }
+    setApCfg(c); setApMax(c.maxPerDay > 0 ? String(c.maxPerDay) : ""); setSheet("apcfg")
+  }
+  async function apSave() {
+    const m = apMax.trim() ? Math.max(1, Math.min(500, parseInt(apMax, 10) || 0)) : 0
+    await setAutopilotCfg(convKey, true, m).catch(() => {}); setApOn(true); setSheet(null)
+  }
+  async function apDisable() { await setAutopilotCfg(convKey, false).catch(() => {}); setApOn(false); setSheet(null) }
+  async function apSendFeedback(good) {
+    await autopilotFeedbackMsg(convKey, good, good ? "" : apCorr.trim(), (apFb && apFb.original) || "").catch(() => {})
+    setSheet(null); setApFb(null)
   }
   async function covPreview(pass, style) {
     if (!pass) return setCovPrev("")
@@ -337,6 +356,7 @@ export default function Conversation({ route, navigation }) {
               <TouchableOpacity onPress={() => covReveal(item)} hitSlop={6}><Text style={{ fontSize: 11, color: theme.accent, marginTop: 3 }}>🕊️ descifrado · ver original</Text></TouchableOpacity>
             </View>
           ) : (showText ? <LinkedText text={item.text} style={{ fontSize: 15.5, color: theme.ink, lineHeight: 20, marginTop: hasMedia ? 5 : 0, paddingHorizontal: hasMedia ? 5 : 0 }} /> : null)}
+          {out && item.auto ? <TouchableOpacity onPress={() => { setApFb({ id: item.id, original: item.text || "" }); setApBad(false); setApCorr(""); setSheet("apfb") }} hitSlop={6}><Text style={{ fontSize: 10.5, color: theme.accent, marginTop: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>🤖 lo respondió el piloto · calificar</Text></TouchableOpacity> : null}
           <Text style={{ fontSize: 10, color: out ? "#6b9a80" : theme.muted2, alignSelf: "flex-end", marginTop: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{hhmm(item.ts)}{out ? " ✓✓" : ""}</Text>
         </View>
       </Pressable>
@@ -355,6 +375,7 @@ export default function Conversation({ route, navigation }) {
           <Avatar name={name} photo={photo} size={34} />
           <Text numberOfLines={1} style={{ fontWeight: "700", fontSize: 17, color: theme.ink, flex: 1 }}>{name} <Text style={{ color: theme.muted2, fontSize: 13 }}>›</Text></Text>
         </TouchableOpacity>
+        {convKey !== "self" && !isGroup ? <TouchableOpacity onPress={openAutopilot} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", backgroundColor: apOn ? theme.accent : "transparent" }}><Text style={{ fontSize: 18, opacity: apOn ? 1 : 0.4 }}>🤖</Text></TouchableOpacity> : null}
         {convKey !== "self" ? <TouchableOpacity onPress={openCovert} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", backgroundColor: covertOn ? theme.accent : "transparent" }}><Text style={{ fontSize: 19, opacity: covertOn ? 1 : (covertStyle ? 0.85 : 0.4) }}>🕊️</Text></TouchableOpacity> : null}
       </View>
 
@@ -549,6 +570,38 @@ export default function Conversation({ route, navigation }) {
           <TouchableOpacity onPress={covSave} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 14, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>{covertStyle ? "Guardar cambios" : "Activar modo encubierto"}</Text></TouchableOpacity>
           {covertStyle ? <TouchableOpacity onPress={covDisable} style={{ paddingVertical: 11, alignItems: "center", marginTop: 2 }}><Text style={{ color: theme.urgent, fontWeight: "700" }}>Desactivar</Text></TouchableOpacity> : null}
           {covPrev ? <View style={{ backgroundColor: theme.bg, borderRadius: 12, padding: 12, marginTop: 12 }}><Text style={{ fontSize: 11, color: theme.muted2, marginBottom: 4 }}>Vista previa (así se ve)</Text><Text numberOfLines={4} style={{ fontSize: 13, color: theme.ink, lineHeight: 18 }}>{covPrev}</Text></View> : null}
+        </View>
+      </Sheet>
+
+      {/* 🏖️ PILOTO AUTOMÁTICO: activar/ajustar por contacto */}
+      <Sheet visible={sheet === "apcfg"} onClose={() => setSheet(null)}>
+        <View>
+          <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>🏖️ Piloto automático</Text>
+          <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 14, lineHeight: 17 }}>La IA responde en TU voz las preguntas simples de {name}. Nunca suena a IA, no da datos que no diste, no acepta reuniones ni manda fotos — lo demás te lo escala a vos.</Text>
+          <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, marginBottom: 6 }}>LÍMITE POR DÍA (vacío = sin límite)</Text>
+          <TextInput value={apMax} onChangeText={setApMax} keyboardType="number-pad" placeholder="sin límite" placeholderTextColor={theme.muted2} style={{ backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 12, fontSize: 15, color: theme.ink, marginBottom: 14 }} />
+          <TouchableOpacity onPress={apSave} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 14, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>{apCfg && apCfg.enabled ? "Guardar cambios" : "Activar piloto automático"}</Text></TouchableOpacity>
+          {apCfg && apCfg.enabled ? <TouchableOpacity onPress={apDisable} style={{ paddingVertical: 11, alignItems: "center", marginTop: 2 }}><Text style={{ color: theme.urgent, fontWeight: "700" }}>Desactivar</Text></TouchableOpacity> : null}
+        </View>
+      </Sheet>
+
+      {/* 🤖 FEEDBACK de un mensaje del piloto */}
+      <Sheet visible={sheet === "apfb"} onClose={() => { setSheet(null); setApFb(null) }}>
+        <View>
+          <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>🤖 ¿Cómo respondió?</Text>
+          <Text style={{ fontSize: 13, color: theme.muted, marginBottom: 14 }}>"{((apFb && apFb.original) || "").slice(0, 160)}"</Text>
+          {!apBad ? (
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <TouchableOpacity onPress={() => apSendFeedback(true)} style={{ flex: 1, backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 14, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800" }}>👍 Estuvo bien</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setApBad(true)} style={{ flex: 1, backgroundColor: theme.bg, borderRadius: 12, paddingVertical: 14, alignItems: "center" }}><Text style={{ color: theme.ink, fontWeight: "700" }}>👎 Estuvo mal</Text></TouchableOpacity>
+            </View>
+          ) : (
+            <View>
+              <Text style={{ fontSize: 12, color: theme.muted, marginBottom: 6 }}>¿Qué hubieras dicho vos? (así aprende a responder como vos)</Text>
+              <TextInput value={apCorr} onChangeText={setApCorr} multiline placeholder="Lo que vos habrías respondido…" placeholderTextColor={theme.muted2} style={{ backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 12, fontSize: 15, color: theme.ink, minHeight: 70, marginBottom: 12 }} />
+              <TouchableOpacity onPress={() => apSendFeedback(false)} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 14, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800" }}>Guardar corrección</Text></TouchableOpacity>
+            </View>
+          )}
         </View>
       </Sheet>
     </KeyboardAvoidingView>

@@ -73,6 +73,10 @@ export const setCovertCfg = (key, pass, style) => api("/api/covert/config", { me
 export const previewCovert = (text, pass, style) => api("/api/covert/preview", { method: "POST", body: JSON.stringify({ text, pass, style }) })
 // #5: transcribir + resumir un video/audio/imagen (traducido al español)
 export const summarizeMediaMsg = (id) => api("/api/media/summarize", { method: "POST", body: JSON.stringify({ id }) })
+// 🏖️ piloto automático por contacto + feedback (mismo backend que web/desktop)
+export const getAutopilotCfg = (key) => api("/api/autopilot/config?key=" + encodeURIComponent(key))
+export const setAutopilotCfg = (key, enabled, maxPerDay = 0) => api("/api/autopilot/config", { method: "POST", body: JSON.stringify({ key, enabled, maxPerDay }) })
+export const autopilotFeedbackMsg = (key, good, correction = "", original = "") => api("/api/autopilot/feedback", { method: "POST", body: JSON.stringify({ key, good, correction, original }) })
 export const suggestReply = (key) => api("/api/thread/suggest-reply?key=" + encodeURIComponent(key))
 export const summarizeChat = (key, range = "all") => api("/api/thread/summarize?key=" + encodeURIComponent(key) + "&range=" + range)
 export const correctText = async (text, channel) => {
