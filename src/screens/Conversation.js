@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback, useRef } from "react"
-import { View, Text, TextInput, TouchableOpacity, Pressable, FlatList, Platform, ActivityIndicator, Alert, ScrollView, Switch, Linking, Image } from "react-native"
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { View, Text, TextInput, TouchableOpacity, Pressable, FlatList, Platform, ActivityIndicator, Alert, ScrollView, Switch, Linking, Image, AppState } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import * as Haptics from "expo-haptics"
 import { useAudioRecorder, RecordingPresets, AudioModule, setAudioModeAsync } from "expo-audio"
@@ -12,7 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThread, getThreadDelta, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg } from "../api"
+import { getThread, getThreadDelta, getThreadBefore, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, sendStickerFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg } from "../api"
 import { loadThread, saveThread } from "../store" // cache local (SQLite): historia completa en el celular, de la red solo el delta
 import { hhmm, color, preview } from "../util"
 import Avatar from "../components/Avatar"
@@ -43,6 +43,7 @@ export default function Conversation({ route, navigation }) {
   const [covertOn, setCovertOn] = useState(false)      // enviar el próximo mensaje encubierto (cifrado + disfrazado)
   const [covCfg, setCovCfg] = useState(null)           // {enabled, style, styles} para el sheet de config
   const [apOn, setApOn] = useState(false)              // 🤖 ¿este contacto tiene piloto automático?
+  const [refreshing, setRefreshing] = useState(false)  // 🔄 refresco manual (botón del header)
   const [apCfg, setApCfg] = useState(null)             // config del piloto para el sheet
   const [apMax, setApMax] = useState("")               // input de límite diario
   const [apFb, setApFb] = useState(null)               // { id, original } → sheet de feedback
@@ -50,6 +51,9 @@ export default function Conversation({ route, navigation }) {
   const [covPass, setCovPass] = useState(""); const [covSel, setCovSel] = useState("poema"); const [covPrev, setCovPrev] = useState("")
   const [text, setText] = useState("")
   const [loading, setLoading] = useState(true)
+  const [hasOlder, setHasOlder] = useState(false)      // ▲ ¿hay mensajes más antiguos para paginar? (grupos grandes)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [hint, setHint] = useState("")                 // tooltip por long-press de los íconos (no hay hover en móvil)
   const [targets, setTargets] = useState([])
   const [target, setTarget] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -64,7 +68,16 @@ export default function Conversation({ route, navigation }) {
   const [rec, setRec] = useState(null) // 'voice' | 'ai'
   const [recDur, setRecDur] = useState(0)
   const listRef = useRef(null)
+  const prependingRef = useRef(false) // true mientras prependemos mensajes viejos → NO auto-scrollear al fondo
+  const hintTimer = useRef(null)
   const recStart = useRef(0), recTimer = useRef(null)
+
+  // long-press hint (equivalente al title=/data-tip de web/desktop, que no existe en táctil)
+  const showHint = (m) => { setHint(m); clearTimeout(hintTimer.current); hintTimer.current = setTimeout(() => setHint(""), 1800) }
+  useEffect(() => () => clearTimeout(hintTimer.current), [])
+
+  // 👥 miembros del grupo = nombres distintos de quienes escribieron (igual que desktop/web). Solo para grupos.
+  const members = useMemo(() => [...new Set(items.filter((m) => m.dir !== "out" && m.name).map((m) => m.name))], [items])
   // #3: collage — mientras hay uris, se monta un lienzo oculto que se captura con view-shot
   const [collage, setCollage] = useState(null) // { uris:[], loaded:0 } | null
   const collageRef = useRef(null)
@@ -97,8 +110,9 @@ export default function Conversation({ route, navigation }) {
         // FULL (primer sync de la sesión): últimos 60 + metadata del hilo, y a partir de acá solo delta
         const d = await getThread(convKey)
         setItems(d.items || []); setIsGroup(!!d.group); setCovertStyle(d.covert || null); if (!d.covert) setCovertOn(false); setApOn(!!d.autopilot); setLoading(false)
+        setHasOlder(!!d.hasMore)
         sync.current = { maxRev: d.maxRev || 0, ready: true }
-        saveThread(convKey, d.items || [], { maxRev: d.maxRev || 0, group: !!d.group, covert: d.covert || null })
+        saveThread(convKey, d.items || [], { maxRev: d.maxRev || 0, group: !!d.group, covert: d.covert || null, hasMore: !!d.hasMore, oldestTs: d.oldestTs || 0 })
       }
     } catch (e) { if (e && e.code === 401) navigation.replace("Login"); setLoading(false) }
   }, [convKey, navigation])
@@ -110,6 +124,8 @@ export default function Conversation({ route, navigation }) {
       const { items, meta } = await loadThread(convKey)
       if (items.length) { setItems(items); setLoading(false) }
       if (meta) { if (meta.group != null) setIsGroup(!!meta.group); if ("covert" in meta) { setCovertStyle(meta.covert || null); if (!meta.covert) setCovertOn(false) } }
+      // ¿mostrar "cargar anteriores"? confío en el flag cacheado; si no lo tengo, heurística por cantidad (loadOlder se auto-corrige)
+      setHasOlder(meta && meta.hasMore != null ? !!meta.hasMore : items.length >= 40)
       // 2) sincronizar con la red: delta si ya tengo maxRev cacheado, full si no
       if (meta && meta.maxRev) sync.current = { maxRev: meta.maxRev, ready: true }
       load()
@@ -117,8 +133,31 @@ export default function Conversation({ route, navigation }) {
     getTargets(convKey).then((t) => { const ts = (t && t.targets) || []; setTargets(ts); setTarget(ts[(t && t.default) || 0] || null) }).catch(() => {})
     if (draft) setText(draft) // borrador de IA precargado desde Home
     const iv = setInterval(load, 5000)
-    return () => { clearInterval(iv); clearInterval(recTimer.current) }
-  }, [load, convKey])
+    // los timers de JS se pausan en background → al VOLVER a foreground refrescamos al toque (si no, quedaba stale)
+    const appSub = AppState.addEventListener("change", (s) => { if (s === "active") load() })
+    const focusSub = navigation.addListener("focus", () => load())
+    return () => { clearInterval(iv); clearInterval(recTimer.current); appSub && appSub.remove(); focusSub && focusSub() }
+  }, [load, convKey, navigation])
+
+  // ▲ PAGINACIÓN HACIA ATRÁS: trae los mensajes previos al más viejo que tengo y los PREPENDE. Arregla el historial de grupos grandes.
+  // Mismo endpoint que web (loadOlder) y desktop (getThreadBefore): /api/thread?before=<ts>.
+  const loadOlder = useCallback(async () => {
+    if (loadingOlder || prependingRef.current || !items.length) return
+    const oldest = items[0] && items[0].ts
+    if (!oldest) return
+    setLoadingOlder(true); prependingRef.current = true
+    try {
+      const d = await getThreadBefore(convKey, oldest)
+      const older = (d.items || []).filter((it) => (it.ts || 0) < oldest)
+      if (older.length) {
+        setItems((cur) => mergeItems(cur, older))
+        saveThread(convKey, older, { hasMore: !!d.hasMore, oldestTs: (older[0] && older[0].ts) || oldest }) // persistir la página vieja → no se re-baja
+      }
+      setHasOlder(!!d.hasMore && older.length > 0)
+    } catch {}
+    setLoadingOlder(false)
+    setTimeout(() => { prependingRef.current = false }, 500) // deja asentar el layout antes de re-habilitar el auto-scroll
+  }, [convKey, items, loadingOlder])
 
   // ── ENVIAR ──
   const optimistic = (extra) => {
@@ -229,8 +268,17 @@ export default function Conversation({ route, navigation }) {
     try { await ImagePicker.requestMediaLibraryPermissionsAsync() } catch {} // Android 13+ usa el picker del sistema, sin permiso
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], allowsMultipleSelection: true, selectionLimit: 10, quality: 0.85 })
     if (res.canceled || !res.assets) return
-    for (const a of res.assets) { const isVid = a.type === "video"; await sendOneMedia({ uri: a.uri, mime: a.mimeType || (isVid ? "video/mp4" : "image/jpeg"), name: a.fileName || "archivo", kind: isVid ? "video" : "image" }) }
-    setTimeout(load, 900)
+    const sendAll = async () => { for (const a of res.assets) { const isVid = a.type === "video"; await sendOneMedia({ uri: a.uri, mime: a.mimeType || (isVid ? "video/mp4" : "image/jpeg"), name: a.fileName || "archivo", kind: isVid ? "video" : "image" }) } setTimeout(load, 900) }
+    // si elegiste 2+ FOTOS (sin videos mezclados) te ofrezco armar un collage (1 sola imagen) o mandarlas por separado
+    const photos = res.assets.filter((a) => a.type !== "video")
+    if (photos.length >= 2 && photos.length === res.assets.length) {
+      return Alert.alert(`Elegiste ${photos.length} fotos`, "¿Cómo las querés mandar?", [
+        { text: "🧩 Hacer collage", onPress: () => setCollage({ uris: photos.slice(0, 6).map((a) => a.uri), loaded: 0 }) },
+        { text: "Por separado", onPress: sendAll },
+        { text: "Cancelar", style: "cancel" },
+      ])
+    }
+    await sendAll()
   }
   // #2: sacar una foto (o video) con la CÁMARA y mandarla
   async function takePhoto() {
@@ -241,6 +289,17 @@ export default function Conversation({ route, navigation }) {
     if (res.canceled || !res.assets || !res.assets[0]) return
     const a = res.assets[0], isVid = a.type === "video"
     await sendOneMedia({ uri: a.uri, mime: a.mimeType || (isVid ? "video/mp4" : "image/jpeg"), name: a.fileName || (isVid ? "video.mp4" : "foto.jpg"), kind: isVid ? "video" : "image" })
+    setTimeout(load, 900)
+  }
+  // 🩷 mandar una imagen como STICKER (el server la convierte a webp 512×512)
+  async function pickSticker() {
+    setSheet(null)
+    try { await ImagePicker.requestMediaLibraryPermissionsAsync() } catch {}
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.9 })
+    if (res.canceled || !res.assets || !res.assets[0]) return
+    const a = res.assets[0]
+    const r = await sendStickerFile(convKey, a.uri, a.mimeType || "image/jpeg", target).catch(() => ({ error: "no pude" }))
+    if (r && r.error) Alert.alert("Sticker", "No se pudo enviar el sticker.")
     setTimeout(load, 900)
   }
   async function pickDoc() {
@@ -375,8 +434,12 @@ export default function Conversation({ route, navigation }) {
           <Avatar name={name} photo={photo} size={34} />
           <Text numberOfLines={1} style={{ fontWeight: "700", fontSize: 17, color: theme.ink, flex: 1 }}>{name} <Text style={{ color: theme.muted2, fontSize: 13 }}>›</Text></Text>
         </TouchableOpacity>
-        {convKey !== "self" && !isGroup ? <TouchableOpacity onPress={openAutopilot} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", backgroundColor: apOn ? theme.accent : "transparent" }}><Text style={{ fontSize: 18, opacity: apOn ? 1 : 0.4 }}>🤖</Text></TouchableOpacity> : null}
-        {convKey !== "self" ? <TouchableOpacity onPress={openCovert} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", backgroundColor: covertOn ? theme.accent : "transparent" }}><Text style={{ fontSize: 19, opacity: covertOn ? 1 : (covertStyle ? 0.85 : 0.4) }}>🕊️</Text></TouchableOpacity> : null}
+        <TouchableOpacity onPress={async () => { if (refreshing) return; setRefreshing(true); await load(); setTimeout(() => setRefreshing(false), 350) }} onLongPress={() => showHint("Refrescar la conversación")} accessibilityLabel="Refrescar la conversación" hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" }}>
+          {refreshing ? <ActivityIndicator size="small" color={theme.accent} /> : <Text style={{ fontSize: 18, opacity: 0.55 }}>🔄</Text>}
+        </TouchableOpacity>
+        {isGroup && members.length ? <TouchableOpacity onPress={() => setSheet("members")} onLongPress={() => showHint("Ver miembros del grupo")} accessibilityLabel="Miembros del grupo" hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" }}><Text style={{ fontSize: 18, opacity: 0.55 }}>👥</Text></TouchableOpacity> : null}
+        {convKey !== "self" && !isGroup ? <TouchableOpacity onPress={openAutopilot} onLongPress={() => showHint("Piloto automático: la IA responde en tu voz")} accessibilityLabel="Piloto automático" hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", backgroundColor: apOn ? theme.accent : "transparent" }}><Text style={{ fontSize: 18, opacity: apOn ? 1 : 0.4 }}>🤖</Text></TouchableOpacity> : null}
+        {convKey !== "self" ? <TouchableOpacity onPress={openCovert} onLongPress={() => showHint("Modo encubierto (El Santo): enviar cifrado")} accessibilityLabel="Modo encubierto" hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", backgroundColor: covertOn ? theme.accent : "transparent" }}><Text style={{ fontSize: 19, opacity: covertOn ? 1 : (covertStyle ? 0.85 : 0.4) }}>🕊️</Text></TouchableOpacity> : null}
       </View>
 
       {loading && !items.length ? (
@@ -384,7 +447,14 @@ export default function Conversation({ route, navigation }) {
       ) : (
         <FlatList ref={listRef} data={items} keyExtractor={(m, i) => String(m.id || i)} renderItem={renderItem}
           contentContainerStyle={{ paddingVertical: 8 }} initialNumToRender={20}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })} onLayout={() => listRef.current?.scrollToEnd({ animated: false })} />
+          maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
+          ListHeaderComponent={hasOlder ? (
+            <TouchableOpacity onPress={loadOlder} disabled={loadingOlder} activeOpacity={0.7} style={{ alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 8, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: theme.card, borderWidth: 0.5, borderColor: theme.line }}>
+              {loadingOlder ? <ActivityIndicator size="small" color={theme.accent} /> : <Text style={{ color: theme.accent, fontWeight: "700", fontSize: 13 }}>▲ Cargar mensajes anteriores</Text>}
+            </TouchableOpacity>
+          ) : null}
+          onContentSizeChange={() => { if (!prependingRef.current) listRef.current?.scrollToEnd({ animated: false }) }}
+          onLayout={() => { if (!prependingRef.current) listRef.current?.scrollToEnd({ animated: false }) }} />
       )}
 
       {/* barra de RESPUESTA (cita) */}
@@ -406,20 +476,20 @@ export default function Conversation({ route, navigation }) {
         </View>
       ) : (
         <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6, padding: 8, paddingBottom: (insets.bottom || 8) + 4, backgroundColor: theme.card, borderTopWidth: 0.5, borderTopColor: theme.line }}>
-          <TouchableOpacity onPress={() => setSheet("ai")} style={round(theme.bg, theme.accent)}><Text style={{ color: theme.accent, fontWeight: "800", fontSize: 14 }}>Ai</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setSheet("ai")} onLongPress={() => showHint("IA: sugerir respuesta o resumir el chat")} accessibilityLabel="Asistente de IA" style={round(theme.bg, theme.accent)}><Text style={{ color: theme.accent, fontWeight: "800", fontSize: 14 }}>Ai</Text></TouchableOpacity>
           {multiTarget ? <TouchableOpacity onPress={() => setSheet("target")} style={round("#fff", theme.line)}><Text style={{ fontSize: 16 }}>{chanIcon}▾</Text></TouchableOpacity> : null}
           <TextInput value={text} onChangeText={setText} placeholder={covertOn ? "🕊️ Mensaje encubierto…" : (target && target.channel === "email" ? "Email…" : t("message_ph"))} placeholderTextColor={theme.muted2} multiline
             style={{ flex: 1, minHeight: 40, backgroundColor: "#fff", borderWidth: 1, borderColor: theme.line, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, fontSize: 15.5, maxHeight: 120, color: theme.ink }} />
           {text.trim() ? (
             <>
-              <TouchableOpacity onPress={toggleCorrect} accessibilityLabel="Corregir con IA al enviar" style={round(correctOn ? theme.accent : theme.bg, correctOn ? theme.accent : theme.line)}><Text style={{ fontSize: 15, color: correctOn ? "#fff" : theme.muted }}>✨</Text></TouchableOpacity>
+              <TouchableOpacity onPress={toggleCorrect} onLongPress={() => showHint(correctOn ? "Corrección IA al enviar: ACTIVADA" : "Corrección IA al enviar: apagada")} accessibilityLabel="Corregir con IA al enviar" style={round(correctOn ? theme.accent : theme.bg, correctOn ? theme.accent : theme.line)}><Text style={{ fontSize: 15, color: correctOn ? "#fff" : theme.muted }}>✨</Text></TouchableOpacity>
               <TouchableOpacity onPress={onSend} style={round(theme.accent)}><Text style={{ color: "#fff", fontSize: 18 }}>➤</Text></TouchableOpacity>
             </>
           ) : (
             <>
-              <TouchableOpacity onPress={() => setSheet("attach")} style={round(theme.bg, theme.line)}><Text style={{ fontSize: 18 }}>📎</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => startRec("voice")} style={round(theme.bg, theme.line)}><Text style={{ fontSize: 18 }}>🎤</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => startRec("ai")} style={round(theme.bg, theme.accent)}><Text style={{ fontSize: 13 }}>🎤</Text><Text style={{ fontSize: 8, color: theme.accent, fontWeight: "800", position: "absolute", bottom: 3, right: 4 }}>IA</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setSheet("attach")} onLongPress={() => showHint("Adjuntar foto, video, sticker o archivo")} accessibilityLabel="Adjuntar" style={round(theme.bg, theme.line)}><Text style={{ fontSize: 18 }}>📎</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => startRec("voice")} onLongPress={() => showHint("Grabar una nota de voz")} accessibilityLabel="Nota de voz" style={round(theme.bg, theme.line)}><Text style={{ fontSize: 18 }}>🎤</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => startRec("ai")} onLongPress={() => showHint("Hablá y la IA lo pasa a texto")} accessibilityLabel="Dictado con IA" style={round(theme.bg, theme.accent)}><Text style={{ fontSize: 13 }}>🎤</Text><Text style={{ fontSize: 8, color: theme.accent, fontWeight: "800", position: "absolute", bottom: 3, right: 4 }}>IA</Text></TouchableOpacity>
             </>
           )}
         </View>
@@ -430,6 +500,15 @@ export default function Conversation({ route, navigation }) {
         <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.25)", justifyContent: "center", alignItems: "center" }}>
           <View style={{ backgroundColor: theme.card, padding: 20, borderRadius: 16, flexDirection: "row", gap: 12, alignItems: "center" }}>
             <ActivityIndicator color={theme.accent} /><Text style={{ fontWeight: "600", color: theme.ink }}>{busy}</Text>
+          </View>
+        </View>
+      ) : null}
+
+      {/* tooltip por long-press (móvil no tiene hover): explica el ícono un instante */}
+      {hint ? (
+        <View pointerEvents="none" style={{ position: "absolute", bottom: 96 + (insets.bottom || 8), alignSelf: "center", left: 0, right: 0, alignItems: "center" }}>
+          <View style={{ backgroundColor: "rgba(0,0,0,0.82)", paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12, maxWidth: "86%" }}>
+            <Text style={{ color: "#fff", fontSize: 13, textAlign: "center" }}>{hint}</Text>
           </View>
         </View>
       ) : null}
@@ -459,6 +538,7 @@ export default function Conversation({ route, navigation }) {
         <TouchableOpacity onPress={cropPhoto} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>✂️</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Recortar foto</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Cortá y enderezá antes de enviar</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={pickCollage} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>🧩</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Collage</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Uní 2 a 6 fotos en una sola</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={trimVideo} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>🎬</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Recortar video</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Elegí el pedazo que querés mandar</Text></View></TouchableOpacity>
+        <TouchableOpacity onPress={pickSticker} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>🩷</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Sticker</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Mandá una imagen como sticker</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={pickDoc} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>📄</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Archivo</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>PDF, documentos, etc.</Text></View></TouchableOpacity>
       </Sheet>
 
@@ -469,6 +549,20 @@ export default function Conversation({ route, navigation }) {
         {menuItem && menuItem.media && /^(video|audio|image)$/.test(menuItem.mediaType || "") ? (
           <TouchableOpacity onPress={() => mediaSummarize(menuItem)} style={{ paddingVertical: 14, flexDirection: "row", gap: 12, borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 17 }}>🌐</Text><Text style={{ fontSize: 16, color: theme.ink }}>Transcribir y resumir</Text></TouchableOpacity>
         ) : null}
+      </Sheet>
+
+      {/* 👥 MIEMBROS DEL GRUPO: nombres distintos de quienes escribieron (derivado de los mensajes, igual que desktop/web) */}
+      <Sheet visible={sheet === "members"} onClose={() => setSheet(null)}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 2 }}>👥 Miembros del grupo</Text>
+        <Text style={{ color: theme.muted, marginBottom: 12, fontSize: 13 }}>{members.length} {members.length === 1 ? "persona ha escrito" : "personas han escrito"} en este grupo</Text>
+        <ScrollView style={{ maxHeight: 420 }}>
+          {members.slice(0, 60).map((nm, i) => (
+            <TouchableOpacity key={i} onPress={() => { setSheet(null); navigation.navigate("Person", { name: nm }) }} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9, borderTopWidth: i ? 0.5 : 0, borderTopColor: theme.line }}>
+              <Avatar name={nm} size={34} />
+              <Text numberOfLines={1} style={{ flex: 1, fontSize: 15, color: theme.ink }}>{nm}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </Sheet>
 
       {/* #5: resultado de transcribir+resumir */}

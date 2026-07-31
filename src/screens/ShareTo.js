@@ -2,23 +2,65 @@ import React, { useEffect, useState, useMemo } from "react"
 import { View, Text, TextInput, TouchableOpacity, FlatList, Image, ActivityIndicator, Alert } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getThreads, sendMsg, sendMediaFile } from "../api"
+import { getThreads, sendMsg, sendMediaFile, importWhatsApp, importWhatsAppZip } from "../api"
+import { chatNameFromFile, deviceDateOrder } from "../components/WhatsAppImport"
 import Avatar from "../components/Avatar"
 
-// Recibe contenido compartido desde otra app (captura, link, texto, imagen) → elegís contactos → se envía.
+// ¿el archivo compartido es un EXPORT de WhatsApp? .txt (sin media) o .zip (con media) con nombre típico WA
+const isWaExport = (f) => { const n = ((f && (f.fileName || f.path)) || "").toLowerCase(); return /\.(txt|zip)$/.test(n) && (/whatsapp|_chat\.(txt|zip)|chat de whatsapp/.test(n)) }
+
+// Recibe contenido compartido desde otra app. Si es un export de WhatsApp → lo IMPORTA solo. Si no → elegís contactos y se envía.
 export default function ShareTo({ route, navigation }) {
   const insets = useSafeAreaInsets()
   const shared = route.params?.shared || {}
   const text = (shared.text || shared.webUrl || "").trim()
   const files = shared.files || []
+  const waFile = files.find(isWaExport) // export de WhatsApp compartido → importar automático
   const [rows, setRows] = useState([])
   const [q, setQ] = useState("")
   const [sel, setSel] = useState({})
   const [sending, setSending] = useState(false)
+  const [imp, setImp] = useState(waFile ? { state: "importing" } : null) // {state:"importing"|"done"|"error", ...}
+
+  // AUTO-IMPORT: si compartieron un export de WhatsApp, lo importo apenas abre (sin pasos manuales). .zip = con media, .txt = solo texto.
+  useEffect(() => {
+    if (!waFile) return
+    const uri = /^(file|content):\/\//.test(waFile.path) ? waFile.path : "file://" + waFile.path
+    const nm = chatNameFromFile(waFile.fileName || waFile.path)
+    const isZip = /\.zip$/i.test((waFile.fileName || waFile.path || "").toLowerCase())
+    const opts = { name: nm, order: deviceDateOrder(), tz: -new Date().getTimezoneOffset() }
+    ;(isZip ? importWhatsAppZip(uri, opts) : importWhatsApp(uri, opts))
+      .then((r) => { if (!r || r.error) setImp({ state: "error", msg: (r && r.error) || "Revisá que sea un export de WhatsApp (.txt o .zip)." }); else setImp({ state: "done", inserted: r.inserted || 0, skipped: r.skipped || 0, media: r.media || 0, name: nm }) })
+      .catch((e) => setImp({ state: "error", msg: String((e && e.message) || e) }))
+  }, [])
 
   useEffect(() => {
+    if (waFile) return
     getThreads().then((d) => { const arr = Array.isArray(d) ? d : (d.threads || []); setRows(arr.filter((t) => t.key && t.key !== "self" && !t.espacio)) }).catch((e) => { if (e && e.code === 401) navigation.replace("Login") })
   }, [])
+
+  // pantalla de IMPORT de WhatsApp (automática)
+  if (waFile) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top, alignItems: "center", justifyContent: "center", padding: 28 }}>
+        <Text style={{ fontSize: 40, marginBottom: 14 }}>{imp?.state === "done" ? "✅" : imp?.state === "error" ? "⚠️" : "📥"}</Text>
+        <Text style={{ fontSize: 20, fontWeight: "800", color: theme.ink, marginBottom: 8, textAlign: "center" }}>
+          {imp?.state === "done" ? "Historial importado" : imp?.state === "error" ? "No se pudo importar" : "Importando tu WhatsApp…"}
+        </Text>
+        {imp?.state === "importing" && <ActivityIndicator color={theme.accent} size="large" style={{ marginTop: 8 }} />}
+        <Text style={{ fontSize: 14.5, color: theme.muted, textAlign: "center", lineHeight: 21, marginTop: 10 }}>
+          {imp?.state === "done" ? `${imp.inserted} mensajes${imp.media ? ` (${imp.media} con foto/audio)` : ""} agregados${imp.name ? ` a ${imp.name}` : ""}${imp.skipped ? ` · ${imp.skipped} ya estaban` : ""}. Sin duplicados.`
+            : imp?.state === "error" ? imp.msg
+            : `Estamos guardando "${chatNameFromFile(waFile.fileName || waFile.path)}" en tu historial. No cierres la app.`}
+        </Text>
+        {imp && imp.state !== "importing" && (
+          <TouchableOpacity onPress={() => navigation.replace("Main")} style={{ marginTop: 24, backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 40 }}>
+            <Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>Listo</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    )
+  }
 
   const shown = useMemo(() => { const nq = q.trim().toLowerCase(); return nq ? rows.filter((t) => (t.name || "").toLowerCase().includes(nq) || (t.ident || "").toLowerCase().includes(nq)) : rows }, [rows, q])
   const selCount = Object.values(sel).filter(Boolean).length

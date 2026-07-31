@@ -59,12 +59,19 @@ async function uploadRaw(path, fileUri, mime) {
 // order = DMY|MDY|auto (formato de fecha del teléfono), tz = offset en minutos (para convertir la hora local del export a UTC).
 export const importWhatsApp = (fileUri, { name = "", order = "auto", tz = 0, group = false } = {}) =>
   uploadRaw(`/api/import/whatsapp?name=${encodeURIComponent(name)}&order=${order}&tz=${tz}&group=${group ? "1" : ""}`, fileUri, "text/plain")
+// import CON multimedia: el .zip de "Exportar chat → Con multimedia" → texto + fotos/audios/videos (más pesado, historial completo)
+export const importWhatsAppZip = (fileUri, { name = "", order = "auto", tz = 0, group = false } = {}) =>
+  uploadRaw(`/api/import/whatsapp-zip?name=${encodeURIComponent(name)}&order=${order}&tz=${tz}&group=${group ? "1" : ""}`, fileUri, "application/zip")
 
 export const getThreads = () => api("/api/threads?limit=200")
 export const getThread = (key) => api("/api/thread?key=" + encodeURIComponent(key) + "&limit=60")
 // SYNC edit-aware: solo los mensajes NUEVOS o editados (rev > sinceRev) → el resto ya está cacheado en el celular
 export const getThreadDelta = (key, sinceRev = 0) => api("/api/thread/delta?key=" + encodeURIComponent(key) + "&sinceRev=" + (sinceRev || 0))
-export const getThreadPage = (key, before) => api("/api/thread?key=" + encodeURIComponent(key) + "&before=" + (before || 0) + "&limit=60")
+// mensajes MÁS ANTIGUOS (paginación hacia atrás): los previos a `before` (un ts). MISMO endpoint que web (loadOlder) y desktop (getThreadBefore).
+export const getThreadBefore = (key, before) => api("/api/thread?key=" + encodeURIComponent(key) + "&before=" + (before || 0) + "&limit=60")
+// buscador CONTEXTUAL / con IA: router de facetas (⚡ 0 tokens) con fallback RAG (🧠). Busca dentro del CUERPO de los mensajes, no solo por nombre.
+// → { mode:"facets"|"rag", type:"find"|…, engine, answer, results:[{key,name,ts,text,media,mediaType,filename}], threads:[{key,name,summary,path}], matches, ragMode, degraded }
+export const searchContent = (q) => api("/api/router-search", { method: "POST", body: JSON.stringify({ q }) })
 export const getTargets = (key) => api("/api/thread/targets?key=" + encodeURIComponent(key))
 export const sendMsg = (key, text, t, covert) => api("/api/send", { method: "POST", body: JSON.stringify({ key, text, channel: t && t.channel, target: t && t.target, covert: !!covert }) })
 // modo encubierto ("El Santo"): config por-contacto + preview en vivo
@@ -89,6 +96,7 @@ export const sttFile = async (fileUri, mime) => {
 }
 export const sendAudioFile = (key, fileUri, mime, dur, t) => uploadRaw("/api/send-audio?" + qs({ key, dur, channel: t && t.channel, target: t && t.target }), fileUri, mime)
 export const sendMediaFile = (key, fileUri, mime, filename, t) => uploadRaw("/api/send-media?" + qs({ key, filename, channel: t && t.channel, target: t && t.target }), fileUri, mime)
+export const sendStickerFile = (key, fileUri, mime, t) => uploadRaw("/api/send-sticker?" + qs({ key, channel: t && t.channel, target: t && t.target }), fileUri, mime)
 export const getHome = () => api("/api/home")
 export const homeAudioSource = () => mediaSource("/api/home/audio")
 export const getCalendar = (view = "dia", date = "") => api("/api/calendar?view=" + view + (date ? "&date=" + date : ""))

@@ -57,12 +57,16 @@
         {
           "androidIntentFilters": [
             "text/*",
+            "application/zip",
+            "application/octet-stream",
             "image/*",
-            "video/*"
+            "video/*",
+            "*/*"
           ],
           "androidMultiIntentFilters": [
             "image/*",
-            "video/*"
+            "video/*",
+            "*/*"
           ]
         }
       ],

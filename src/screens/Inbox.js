@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react"
-import { View, Text, TextInput, TouchableOpacity, FlatList, ScrollView, RefreshControl, StatusBar, BackHandler } from "react-native"
+import { View, Text, TextInput, TouchableOpacity, FlatList, ScrollView, RefreshControl, StatusBar, BackHandler, AppState, ActivityIndicator } from "react-native"
 import Swipeable from "react-native-gesture-handler/Swipeable"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThreads, getGroups, setArchive, setSilence, saveEspacio } from "../api"
+import { getThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent } from "../api"
 import { ago, preview, espIcon, bucketCat } from "../util"
+// (ago se usa también en las tarjetas de resultados de la búsqueda contextual)
 import Avatar from "../components/Avatar"
 import Sheet from "../components/Sheet"
 import { Alert } from "react-native"
@@ -33,6 +34,7 @@ export default function Inbox({ navigation }) {
   const [groups, setGroups] = useState([])
   const [tab, setTab] = useState("todo")
   const [q, setQ] = useState("")
+  const [aiRes, setAiRes] = useState(null) // búsqueda contextual (router-search): {loading}|{error}|{mode,type,answer,results,threads,…}
   const [refreshing, setRefreshing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState("")
@@ -40,12 +42,27 @@ export default function Inbox({ navigation }) {
   // botón "atrás" del celular en la bandeja: si hay búsqueda o un filtro de tab activo, lo LIMPIA (no sale de la app). Solo sale si no hay nada que limpiar.
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (q) { setQ(""); return true }
+      if (q) { setQ(""); setAiRes(null); return true }
       if (tab !== "todo") { setTab("todo"); return true }
       return false
     })
     return () => sub.remove()
   }, [q, tab])
+
+  // buscador CONTEXTUAL (⚡/🧠): busca dentro del CUERPO de los mensajes. Se dispara al tocar la lupa del teclado o el chip de "buscar en el contenido".
+  const runAiSearch = useCallback(async () => {
+    const query = q.trim()
+    if (!query) { setAiRes(null); return }
+    setAiRes({ loading: true })
+    try { const r = await searchContent(query); setAiRes(r && (r.answer || r.results || r.threads) ? r : { error: true }) }
+    catch (e) { if (e && e.code === 401) return navigation.replace("Login"); setAiRes({ error: true }) }
+  }, [q, navigation])
+
+  // abre una conversación por key (reusa la foto/nombre del hilo si lo tengo cacheado)
+  const openConv = useCallback((key, fallbackName) => {
+    const row = rows.find((t) => t.key === key)
+    navigation.navigate("Conversation", { convKey: key, name: (row && row.name) || fallbackName || key, photo: row && row.photo })
+  }, [rows, navigation])
 
   async function createEspacio() {
     const v = newName.trim(); if (!v) return
@@ -72,7 +89,8 @@ export default function Inbox({ navigation }) {
     })()
     const unsub = navigation.addListener("focus", () => load(false))
     const t = setInterval(() => load(false), 15000)
-    return () => { unsub(); clearInterval(t) }
+    const appSub = AppState.addEventListener("change", (s) => { if (s === "active") load(false) }) // al volver de background → refrescar
+    return () => { unsub(); clearInterval(t); appSub && appSub.remove() }
   }, [load, navigation])
 
   const silN = useMemo(() => rows.filter((t) => t.silenced).length, [rows])
@@ -89,13 +107,15 @@ export default function Inbox({ navigation }) {
       const hay = `${t.name || ""} ${t.key || ""} ${t.email || ""} ${t.ident || ""}`.toLowerCase()
       return hay.includes(nq) || (ndig.length >= 3 && hay.replace(/\D/g, "").includes(ndig))
     }
-    return rows.filter((t) => {
+    const out = rows.filter((t) => {
       if (bucketCat(t) === "spam") return false
       if (nq) return matchQ(t)
       if (tab === "_sil") return !!t.silenced
       if (t.silenced) return false
       return tab === "todo" ? true : bucketCat(t) === tab
     })
+    if (nq) return out
+    return out.slice().sort((a, b) => (b.escalated ? 1 : 0) - (a.escalated ? 1 : 0)) // el piloto escaló → arriba de todo
   }, [rows, q, tab])
 
   // acciones de swipe (optimistas)
@@ -108,6 +128,51 @@ export default function Inbox({ navigation }) {
     setRows((r) => r.map((t) => (t.key === item.key ? { ...t, silenced: on } : t)))
     try { await setSilence(item.key, on) } catch {}
   }, [])
+
+  // tarjeta de resultados de la búsqueda contextual (⚡ facetas / 🧠 IA). Aparece arriba de la lista de contactos.
+  const cardWrap = { backgroundColor: theme.bg, marginHorizontal: 12, marginBottom: 8, padding: 14, borderRadius: 14, borderWidth: 0.5, borderColor: theme.line }
+  const AiCard = () => {
+    if (!aiRes) return null
+    if (aiRes.loading) return (<View style={{ ...cardWrap, flexDirection: "row", alignItems: "center" }}><ActivityIndicator color={theme.accent} /><Text style={{ color: theme.muted, marginLeft: 10 }}>Buscando en tus mensajes…</Text></View>)
+    if (aiRes.error) return (<View style={cardWrap}><Text style={{ color: theme.muted }}>No pude buscar eso ahora — probá de nuevo.</Text></View>)
+    const fast = aiRes.mode === "facets"
+    const chip = (<View style={{ backgroundColor: fast ? "#0ea5e9" : theme.accent, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}><Text style={{ color: "#fff", fontSize: 10, fontWeight: "800" }}>{fast ? `⚡ ${aiRes.engine || "facetas"}` : "🧠 IA · RAG"}</Text></View>)
+    const srcs = (aiRes.threads || []).slice(0, 5)
+    const sources = srcs.length ? (
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+        {srcs.map((s) => (
+          <TouchableOpacity key={s.key} onPress={() => openConv(s.key, s.name)} style={{ backgroundColor: theme.card, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 0.5, borderColor: theme.line }}>
+            <Text style={{ fontSize: 12.5, color: theme.ink }}>{s.name || s.key}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    ) : null
+    if (aiRes.type === "find") {
+      const results = aiRes.results || []
+      return (
+        <View style={cardWrap}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}><Text style={{ fontWeight: "800", color: theme.ink, fontSize: 14, flex: 1 }}>🔎 {results.length} resultado{results.length === 1 ? "" : "s"}</Text>{chip}</View>
+          {results.length ? results.slice(0, 30).map((m, i) => {
+            const label = m.filename || m.text || m.mediaType || "archivo"
+            return (
+              <TouchableOpacity key={m.id || i} onPress={() => openConv(m.key, m.name)} style={{ paddingVertical: 9, borderTopWidth: i ? 0.5 : 0, borderTopColor: theme.line }}>
+                <Text numberOfLines={1} style={{ fontSize: 14.5, color: theme.ink }}>{String(label).slice(0, 90)}</Text>
+                <Text style={{ fontSize: 12, color: theme.muted2, marginTop: 2 }}>{m.name || ""}{m.ts ? " · " + ago(m.ts) : ""}</Text>
+              </TouchableOpacity>
+            )
+          }) : <Text style={{ color: theme.muted }}>No encontré nada con eso.</Text>}
+          {sources}
+        </View>
+      )
+    }
+    return (
+      <View style={cardWrap}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}><Text style={{ fontWeight: "800", color: theme.ink, fontSize: 14, flex: 1 }}>Respuesta de tu cerebro</Text>{chip}</View>
+        <Text style={{ fontSize: 14.5, color: theme.ink, lineHeight: 21 }}>{aiRes.answer || "No pude responder eso — probá reformular."}</Text>
+        {sources ? (<><Text style={{ fontSize: 11, color: theme.muted2, marginTop: 12, fontWeight: "700" }}>FUENTES</Text>{sources}</>) : null}
+      </View>
+    )
+  }
 
   const Row = ({ item }) => {
     // ESPACIO (sin swipe)
@@ -136,13 +201,14 @@ export default function Inbox({ navigation }) {
     const swipeRef = React.createRef()
     const content = (
       <TouchableOpacity activeOpacity={0.55} onPress={() => navigation.navigate("Conversation", { convKey: item.key, name: item.name, photo: item.photo })}
-        style={{ flexDirection: "row", alignItems: "center", paddingLeft: 16, gap: 12, backgroundColor: theme.card }}>
+        style={{ flexDirection: "row", alignItems: "center", paddingLeft: 16, gap: 12, backgroundColor: item.escalated ? "rgba(224,135,43,0.10)" : theme.card, borderLeftWidth: item.escalated ? 3 : 0, borderLeftColor: "#e0872b" }}>
         <Avatar name={item.name} photo={item.photo} size={50} />
         <View style={{ flex: 1, borderBottomWidth: 0.5, borderBottomColor: theme.line, paddingVertical: 11, paddingRight: 16 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <Text numberOfLines={1} style={{ fontWeight: "600", fontSize: 16, color: theme.ink, flex: 1, marginRight: 8 }}>{item.name}{item.autopilot ? " 🤖" : ""}</Text>
+            <Text numberOfLines={1} style={{ fontWeight: "600", fontSize: 16, color: theme.ink, flex: 1, marginRight: 8 }}>{item.name}{item.escalated ? " 🏖️⚠️" : item.autopilot ? " 🤖" : ""}</Text>
             <Text style={{ color: theme.muted2, fontSize: 12 }}>{ago(item.ts)}</Text>
           </View>
+          {item.escalated ? <Text numberOfLines={1} style={{ color: "#b5691a", fontSize: 12.5, fontWeight: "700", marginTop: 2 }}>🏖️ El piloto te lo pasó{item.escalatedReason ? " · " + item.escalatedReason : ""}</Text> : null}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4 }}>
             {chs.map((c) => (
               <View key={c} style={{ backgroundColor: CH_BADGE[c].bg, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1.5 }}><Text style={{ color: "#fff", fontSize: 9.5, fontWeight: "700" }}>{CH_BADGE[c].t}</Text></View>
@@ -179,9 +245,17 @@ export default function Inbox({ navigation }) {
         </TouchableOpacity>
       </View>
       <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
-        <TextInput value={q} onChangeText={setQ} placeholder={t("search_placeholder")} placeholderTextColor={theme.muted2}
-          autoCapitalize="none" autoCorrect={false} returnKeyType="search"
+        <TextInput value={q} onChangeText={(v) => { setQ(v); if (!v.trim()) setAiRes(null) }} placeholder={t("search_placeholder")} placeholderTextColor={theme.muted2}
+          autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={runAiSearch}
           style={{ backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: theme.ink }} />
+        {/* discoverabilidad: buscar dentro del CONTENIDO de los mensajes (⚡ facetas / 🧠 IA), no solo por nombre */}
+        {q.trim() && !aiRes ? (
+          <TouchableOpacity onPress={runAiSearch} activeOpacity={0.7} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, backgroundColor: theme.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 0.5, borderColor: theme.line }}>
+            <Text style={{ fontSize: 14 }}>🔎</Text>
+            <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, color: theme.ink }}>Buscar “{q.trim()}” en el contenido de los mensajes</Text>
+            <Text style={{ fontSize: 12, color: theme.accent, fontWeight: "700" }}>Buscar</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
       {!q ? (
         <View style={{ height: 48, marginBottom: 4 }}>
@@ -205,6 +279,7 @@ export default function Inbox({ navigation }) {
         windowSize={11}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.accent} colors={[theme.accent]} />}
+        ListHeaderComponent={aiRes ? <AiCard /> : null}
         ListEmptyComponent={<Text style={{ textAlign: "center", color: theme.muted, marginTop: 40 }}>{q ? t("nothing_matches") : t("no_convs")}</Text>}
       />
 
