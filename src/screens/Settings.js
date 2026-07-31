@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react"
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout } from "../api"
+import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -32,6 +32,8 @@ export default function Settings({ navigation }) {
   const [voices, setVoices] = useState({ voices: [], current: "" })
   const [notif, setNotif] = useState({})
   const [authS, setAuthS] = useState({})
+  const [apPol, setApPol] = useState({ presets: [], custom: [], presets_available: [] }) // 🤖 política global del piloto
+  const [apCustom, setApCustom] = useState("")
   const [sheet, setSheet] = useState(null)
   const [busy, setBusy] = useState(false)
   // forms
@@ -40,11 +42,15 @@ export default function Settings({ navigation }) {
   const [pin, setPin] = useState({ old: "", nu: "" })
 
   const load = useCallback(async () => {
-    const [h, a, l, v, n, s] = await Promise.all([
+    const [h, a, l, v, n, s, ap] = await Promise.all([
       getHubConfig().catch(() => ({})), getAccounts().catch(() => ({ email: [] })), getLlmConfig().catch(() => ({})),
       getVoices().catch(() => ({ voices: [] })), getNotifPrefs().catch(() => ({})), getAuthStatus().catch(() => ({})),
+      getAutopilotPolicy().catch(() => ({ presets: [], custom: [], presets_available: [] })),
     ])
     setHub(h); setAccts(a || { email: [] }); setLlm(l || {}); setVoices(v || { voices: [] }); setNotif(n || {}); setAuthS(s || {})
+    const apx = ap || { presets: [], custom: [], presets_available: [] }
+    setApPol({ presets: apx.presets || [], custom: apx.custom || [], presets_available: apx.presets_available || [] })
+    setApCustom((apx.custom || []).join(", "))
   }, [])
   useEffect(() => { load().catch((e) => { if (e && e.code === 401) navigation.replace("Login") }) }, [])
 
@@ -80,6 +86,15 @@ export default function Settings({ navigation }) {
   }
   async function pickVoice(id) { setVoices((v) => ({ ...v, current: id })); await setVoice(id).catch(() => {}) }
   async function saveQuiet(patch) { const p = { ...notif, ...patch }; setNotif(p); await saveNotifPrefs({ quietStart: p.quietStart ?? null, quietEnd: p.quietEnd ?? null }).catch(() => {}) }
+  function toggleApPreset(p) { setApPol((cur) => { const has = (cur.presets || []).includes(p); return { ...cur, presets: has ? cur.presets.filter((x) => x !== p) : [...(cur.presets || []), p] } }) }
+  async function saveAutopilotPolicy() {
+    const custom = apCustom.split(",").map((s) => s.trim()).filter(Boolean)
+    setBusy(true); const r = await setAutopilotPolicy(apPol.presets || [], custom).catch(() => null); setBusy(false)
+    if (r && !r.error) {
+      setApPol((cur) => ({ presets: r.presets || cur.presets, custom: r.custom || custom, presets_available: r.presets_available || cur.presets_available }))
+      setApCustom(((r.custom || custom) || []).join(", ")); Alert.alert("✓", t("ap_saved"))
+    } else Alert.alert("No se pudo", (r && r.error) || "")
+  }
   async function doChangePin() {
     if (!pin.nu || (authS.pinSet && !pin.old)) return Alert.alert("Faltan datos")
     setBusy(true); const r = await changePinReq({ oldPin: pin.old, newPin: pin.nu }).catch(() => null); setBusy(false)
@@ -151,6 +166,26 @@ export default function Settings({ navigation }) {
             <Text style={{ fontSize: 14, color: theme.ink, marginBottom: 6 }}>🌙 {t("quiet_hours")}</Text>
             <Text style={{ fontSize: 12, color: theme.muted, marginBottom: 4 }}>{t("from")}</Text>{hourChips(notif.quietStart, (h) => saveQuiet({ quietStart: h }))}
             <Text style={{ fontSize: 12, color: theme.muted, marginTop: 8, marginBottom: 4 }}>{t("to")}</Text>{hourChips(notif.quietEnd, (h) => saveQuiet({ quietEnd: h }))}
+          </View>
+        </Card>
+
+        <Card title={"🤖 " + t("ap_escalate_title")}>
+          <View style={{ paddingHorizontal: 14, paddingTop: 11, paddingBottom: 3 }}>
+            <Text style={{ fontSize: 12.5, color: theme.muted, lineHeight: 17 }}>{t("ap_escalate_help")}</Text>
+          </View>
+          {(apPol.presets_available || []).map((p) => {
+            const on = (apPol.presets || []).includes(p)
+            return (
+              <Row key={p} onPress={() => toggleApPreset(p)}>
+                <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: on ? theme.accent : theme.line, backgroundColor: on ? theme.accent : "transparent", justifyContent: "center", alignItems: "center" }}>{on ? <Text style={{ color: "#fff", fontSize: 13, fontWeight: "800" }}>✓</Text> : null}</View>
+                <Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>{t("ap_preset_" + p)}</Text>
+              </Row>
+            )
+          })}
+          <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 13 }}>
+            <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, marginBottom: 6, letterSpacing: 0.4 }}>{t("ap_custom_label")}</Text>
+            <TextInput value={apCustom} onChangeText={setApCustom} placeholder={t("ap_custom_ph")} placeholderTextColor={theme.muted2} autoCapitalize="none" style={{ ...inp, marginBottom: 12 }} />
+            <TouchableOpacity onPress={saveAutopilotPolicy} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>{t("save")}</Text></TouchableOpacity>
           </View>
         </Card>
 

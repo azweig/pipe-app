@@ -84,6 +84,9 @@ export const summarizeMediaMsg = (id) => api("/api/media/summarize", { method: "
 export const getAutopilotCfg = (key) => api("/api/autopilot/config?key=" + encodeURIComponent(key))
 export const setAutopilotCfg = (key, enabled, maxPerDay = 0) => api("/api/autopilot/config", { method: "POST", body: JSON.stringify({ key, enabled, maxPerDay }) })
 export const autopilotFeedbackMsg = (key, good, correction = "", original = "") => api("/api/autopilot/feedback", { method: "POST", body: JSON.stringify({ key, good, correction, original }) })
+// 🏖️ piloto automático — política GLOBAL: qué temas escala (te deja a vos) en vez de responder. presets = keys, custom = frases libres.
+export const getAutopilotPolicy = () => api("/api/autopilot/policy")
+export const setAutopilotPolicy = (presets, custom) => api("/api/autopilot/policy", { method: "POST", body: JSON.stringify({ presets, custom }) })
 export const suggestReply = (key) => api("/api/thread/suggest-reply?key=" + encodeURIComponent(key))
 export const summarizeChat = (key, range = "all") => api("/api/thread/summarize?key=" + encodeURIComponent(key) + "&range=" + range)
 export const correctText = async (text, channel) => {
