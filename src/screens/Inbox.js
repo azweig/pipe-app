@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent } from "../api"
+import { getThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent, mergeContacts } from "../api"
 import { ago, preview, espIcon, bucketCat } from "../util"
 // (ago se usa también en las tarjetas de resultados de la búsqueda contextual)
 import Avatar from "../components/Avatar"
@@ -38,16 +38,23 @@ export default function Inbox({ navigation }) {
   const [refreshing, setRefreshing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState("")
+  // MODO SELECCIÓN: elegir 2+ contactos y UNIRLOS (dedupe la misma persona partida en varios hilos). El 1ro seleccionado (en orden de lista) es el que se CONSERVA.
+  const [selMode, setSelMode] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
+  const [merging, setMerging] = useState(false)
+  const toggleSel = useCallback((key) => setSelected((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n }), [])
+  const exitSel = useCallback(() => { setSelMode(false); setSelected(new Set()) }, [])
 
   // botón "atrás" del celular en la bandeja: si hay búsqueda o un filtro de tab activo, lo LIMPIA (no sale de la app). Solo sale si no hay nada que limpiar.
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (selMode) { exitSel(); return true }
       if (q) { setQ(""); setAiRes(null); return true }
       if (tab !== "todo") { setTab("todo"); return true }
       return false
     })
     return () => sub.remove()
-  }, [q, tab])
+  }, [q, tab, selMode, exitSel])
 
   // buscador CONTEXTUAL (⚡/🧠): busca dentro del CUERPO de los mensajes. Se dispara al tocar la lupa del teclado o el chip de "buscar en el contenido".
   const runAiSearch = useCallback(async () => {
@@ -118,6 +125,25 @@ export default function Inbox({ navigation }) {
     return out.slice().sort((a, b) => (b.escalated ? 1 : 0) - (a.escalated ? 1 : 0)) // el piloto escaló → arriba de todo
   }, [rows, q, tab])
 
+  // claves seleccionadas EN ORDEN DE LISTA → target = la 1ra (se conserva), el resto se absorbe. Solo hilos reales (con key, no espacios).
+  const selKeys = useMemo(() => shown.filter((t) => t.key && !t.espacio && selected.has(t.key)).map((t) => t.key), [shown, selected])
+  const targetName = useMemo(() => { const r = shown.find((t) => t.key === selKeys[0]); return (r && r.name) || "" }, [shown, selKeys])
+  const doMerge = useCallback(async () => {
+    if (selKeys.length < 2 || merging) return
+    const [target, ...rest] = selKeys
+    const n = selKeys.length
+    setMerging(true)
+    try {
+      await mergeContacts(target, rest)
+      exitSel()
+      await load(false) // re-fetch: los hilos absorbidos ya no vuelven del server
+      Alert.alert("🔗 " + t("merged_ok"), t("merged_n", { n }))
+    } catch (e) {
+      if (e && e.code === 401) return navigation.replace("Login")
+      Alert.alert("Error", (e && e.message) || t("merge_fail"))
+    } finally { setMerging(false) }
+  }, [selKeys, merging, exitSel, load, navigation, t])
+
   // acciones de swipe (optimistas)
   const doArchive = useCallback(async (item) => {
     setRows((r) => r.filter((t) => t.key !== item.key)) // archivado → sale de la bandeja (el server ya no lo devuelve)
@@ -178,7 +204,7 @@ export default function Inbox({ navigation }) {
     // ESPACIO (sin swipe)
     if (item.espacio) {
       return (
-        <TouchableOpacity activeOpacity={0.55} onPress={() => navigation.navigate("Espacio", { id: item.espId, name: item.name })}
+        <TouchableOpacity activeOpacity={0.55} disabled={selMode} onPress={() => navigation.navigate("Espacio", { id: item.espId, name: item.name })}
           style={{ flexDirection: "row", alignItems: "center", paddingLeft: 16, gap: 12, backgroundColor: theme.card }}>
           <View style={{ width: 50, height: 50, borderRadius: 15, backgroundColor: theme.bg, borderWidth: 1, borderColor: theme.line, justifyContent: "center", alignItems: "center" }}>
             <Text style={{ fontSize: 24 }}>{espIcon(item.icon)}</Text>
@@ -196,12 +222,20 @@ export default function Inbox({ navigation }) {
         </TouchableOpacity>
       )
     }
-    // CONVERSACIÓN (con swipe): ←izq archiva, der→ silencia
+    // CONVERSACIÓN (con swipe): ←izq archiva, der→ silencia. En MODO SELECCIÓN: sin swipe, tap = marcar/desmarcar para unir.
     const chs = channelsOf(item)
     const swipeRef = React.createRef()
+    const isSel = selMode && selected.has(item.key)
     const content = (
-      <TouchableOpacity activeOpacity={0.55} onPress={() => navigation.navigate("Conversation", { convKey: item.key, name: item.name, photo: item.photo })}
-        style={{ flexDirection: "row", alignItems: "center", paddingLeft: 16, gap: 12, backgroundColor: item.escalated ? "rgba(224,135,43,0.10)" : theme.card, borderLeftWidth: item.escalated ? 3 : 0, borderLeftColor: "#e0872b" }}>
+      <TouchableOpacity activeOpacity={0.55}
+        onLongPress={() => { if (!selMode) { setSelMode(true); toggleSel(item.key) } }} delayLongPress={280}
+        onPress={() => selMode ? toggleSel(item.key) : navigation.navigate("Conversation", { convKey: item.key, name: item.name, photo: item.photo })}
+        style={{ flexDirection: "row", alignItems: "center", paddingLeft: 16, gap: 12, backgroundColor: isSel ? "rgba(99,102,241,0.10)" : item.escalated ? "rgba(224,135,43,0.10)" : theme.card, borderLeftWidth: item.escalated ? 3 : 0, borderLeftColor: "#e0872b" }}>
+        {selMode ? (
+          <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: isSel ? theme.accent : theme.muted2, backgroundColor: isSel ? theme.accent : "transparent", justifyContent: "center", alignItems: "center", marginLeft: -4 }}>
+            {isSel ? <Text style={{ color: "#fff", fontSize: 13, fontWeight: "800", marginTop: -1 }}>✓</Text> : null}
+          </View>
+        ) : null}
         <Avatar name={item.name} photo={item.photo} size={50} />
         <View style={{ flex: 1, borderBottomWidth: 0.5, borderBottomColor: theme.line, paddingVertical: 11, paddingRight: 16 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -219,6 +253,8 @@ export default function Inbox({ navigation }) {
         </View>
       </TouchableOpacity>
     )
+    // en modo selección deshabilitamos el swipe (el gesto es tocar para marcar)
+    if (selMode) return content
     return (
       <Swipeable
         ref={swipeRef}
@@ -239,10 +275,17 @@ export default function Inbox({ navigation }) {
       <StatusBar barStyle="dark-content" />
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 }}>
         <Text style={{ fontSize: 28, fontWeight: "800", color: theme.ink }}>{t("inbox")}</Text>
-        <TouchableOpacity onPress={() => setCreating(true)} hitSlop={10} style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
-          <Text style={{ fontSize: 16, color: theme.accent, fontWeight: "800", marginTop: -1 }}>+</Text>
-          <Text style={{ fontSize: 13.5, color: theme.accent, fontWeight: "700" }}>Espacio</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <TouchableOpacity onPress={() => selMode ? exitSel() : setSelMode(true)} hitSlop={10} style={{ flexDirection: "row", alignItems: "center", backgroundColor: selMode ? theme.accent : theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+            <Text style={{ fontSize: 13.5, color: selMode ? "#fff" : theme.accent, fontWeight: "700" }}>{selMode ? t("cancel") : t("select")}</Text>
+          </TouchableOpacity>
+          {!selMode ? (
+            <TouchableOpacity onPress={() => setCreating(true)} hitSlop={10} style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+              <Text style={{ fontSize: 16, color: theme.accent, fontWeight: "800", marginTop: -1 }}>+</Text>
+              <Text style={{ fontSize: 13.5, color: theme.accent, fontWeight: "700" }}>Espacio</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
       <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
         <TextInput value={q} onChangeText={(v) => { setQ(v); if (!v.trim()) setAiRes(null) }} placeholder={t("search_placeholder")} placeholderTextColor={theme.muted2}
@@ -278,10 +321,24 @@ export default function Inbox({ navigation }) {
         initialNumToRender={12}
         windowSize={11}
         keyboardShouldPersistTaps="handled"
+        contentContainerStyle={selMode ? { paddingBottom: 88 } : undefined}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.accent} colors={[theme.accent]} />}
         ListHeaderComponent={aiRes ? <AiCard /> : null}
         ListEmptyComponent={<Text style={{ textAlign: "center", color: theme.muted, marginTop: 40 }}>{q ? t("nothing_matches") : t("no_convs")}</Text>}
       />
+
+      {/* barra de acción de UNIR: aparece en modo selección, ancla abajo. "🔗 Unir (N)" activo con 2+ marcados */}
+      {selMode ? (
+        <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: theme.card, borderTopWidth: 0.5, borderTopColor: theme.line, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 12 }}>
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, color: theme.muted }}>
+            {selKeys.length < 2 ? t("merge_pick_2") : t("merge_keeps", { name: targetName })}
+          </Text>
+          <TouchableOpacity disabled={selKeys.length < 2 || merging} onPress={doMerge} activeOpacity={0.8}
+            style={{ backgroundColor: theme.accent, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 11, opacity: (selKeys.length < 2 || merging) ? 0.5 : 1 }}>
+            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>{merging ? t("merging") : "🔗 " + t("merge_selected", { n: selKeys.length })}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* crear espacio: solo el nombre; las reglas se agregan adentro (⚙️) */}
       <Sheet visible={creating} onClose={() => setCreating(false)}>
