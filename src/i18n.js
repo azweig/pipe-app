@@ -44,6 +44,10 @@ export const DICT = {
     // piloto automático — qué escalar (global)
     ap_escalate_title: "Qué escala el piloto", ap_escalate_help: "El piloto responde todo, MENOS estos temas — esos te los deja a vos.", ap_custom_label: "OTROS TEMAS (separados por coma)", ap_custom_ph: "ej: contratos, mudanza, viaje familiar", ap_saved: "Guardado. El piloto te escalará estos temas.",
     ap_preset_money: "Plata / pagos", ap_preset_resign: "Renuncias", ap_preset_hire: "Contrataciones", ap_preset_meeting: "Reuniones o llamadas con hora", ap_preset_appointment: "Citas / turnos", ap_preset_legal: "Temas legales", ap_preset_emotional: "Temas personales serios", ap_preset_health: "Salud",
+    // enriquecimiento social (Apify) — ajustes
+    apify_title: "Enriquecimiento (Apify)", apify_help: "Perfiles sociales anónimos (no usa tus cookies). Cargá una o varias cuentas Apify — rota entre ellas y si una llega al límite mensual pasa a la siguiente.", apify_add: "Agregar cuenta Apify", apify_exhausted: "AGOTADA", apify_name_ph: "Nombre (ej: Cuenta 1)", apify_token_ph: "Token de Apify (apify_api_…)", apify_runs: "corridas", apify_added: "Cuenta agregada.", apify_none: "Sin cuentas. Agregá una para investigar perfiles.", apify_need_fields: "Poné un nombre y el token.",
+    // enriquecimiento social — perfil de contacto
+    social_profiles: "PERFILES SOCIALES", social_hint: "Pegá los links de sus perfiles. Investigar los abre de forma anónima (sin tus cookies).", investigate: "Investigar", investigating: "Investigando…", interests_hd: "INTERESES", sources_hd: "Fuentes", relationships_hd: "RELACIONES",
   },
   en: {
     messages: "Messages", calendar: "Calendar", home: "Home", radar: "Radar", notes: "Notes",
@@ -67,6 +71,8 @@ export const DICT = {
     your_hub: "Your hub", email_accounts: "EMAIL ACCOUNTS", add_email: "Add email account", ai_engine: "AI ENGINE", add_key: "Add key (OpenAI/Claude/Gemini)", transcription: "TRANSCRIPTION (STT)", stt_local: "Local (whisper.cpp) — private, never leaves", stt_cloud: "OpenAI Whisper (cloud)", voice: "VOICE (reads your summary)", notifications: "NOTIFICATIONS", quiet_hours: "Quiet hours (do not disturb)", from: "From", to: "To", security: "SECURITY", change_pin: "Change access PIN", create_pin: "Create access PIN", language: "LANGUAGE", test: "Test",
     ap_escalate_title: "What the autopilot escalates", ap_escalate_help: "The autopilot answers everything EXCEPT these topics — those it leaves to you.", ap_custom_label: "OTHER TOPICS (comma-separated)", ap_custom_ph: "e.g. contracts, moving, family trip", ap_saved: "Saved. The autopilot will escalate these topics to you.",
     ap_preset_money: "Money / payments", ap_preset_resign: "Resignations", ap_preset_hire: "Hirings", ap_preset_meeting: "Meetings / calls", ap_preset_appointment: "Appointments", ap_preset_legal: "Legal matters", ap_preset_emotional: "Serious personal", ap_preset_health: "Health",
+    apify_title: "Enrichment (Apify)", apify_help: "Anonymous social profiles (doesn't use your cookies). Load one or more Apify accounts — it rotates between them and if one hits the monthly limit it moves to the next.", apify_add: "Add Apify account", apify_exhausted: "EXHAUSTED", apify_name_ph: "Name (e.g. Account 1)", apify_token_ph: "Apify token (apify_api_…)", apify_runs: "runs", apify_added: "Account added.", apify_none: "No accounts. Add one to investigate profiles.", apify_need_fields: "Enter a name and the token.",
+    social_profiles: "SOCIAL PROFILES", social_hint: "Paste their profile links. Investigate opens them anonymously (without your cookies).", investigate: "Investigate", investigating: "Investigating…", interests_hd: "INTERESTS", sources_hd: "Sources", relationships_hd: "RELATIONSHIPS",
   },
 }
 

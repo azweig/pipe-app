@@ -148,3 +148,13 @@ export const espacioAddRule = (id, type, value) => api("/api/espacio/rule", { me
 export const espacioRemoveRule = (id, idx) => api("/api/espacio/rule/delete", { method: "POST", body: JSON.stringify({ id, idx }) })
 export const setArchive = (key, on = true) => api("/api/contact/archive", { method: "POST", body: JSON.stringify({ key, on }) })
 export const setSilence = (key, on = true) => api("/api/contact/silence", { method: "POST", body: JSON.stringify({ key, on }) })
+// ── Enriquecimiento social (Apify anónimo) ──
+// cuentas Apify: rota entre ellas y hace failover cuando una llega al límite mensual. No usa tus cookies.
+export const getApifyAccounts = () => api("/api/apify/accounts")
+export const addApifyAccount = (name, token) => api("/api/apify/accounts", { method: "POST", body: JSON.stringify({ name, token }) })
+export const removeApifyAccount = (id) => api("/api/apify/accounts", { method: "POST", body: JSON.stringify({ remove: id }) })
+// perfil social de un contacto: links guardados + enrichment ya calculado (o null)
+export const getContactSocial = (key) => api("/api/contact/social?key=" + encodeURIComponent(key))
+export const setContactLinks = (key, links) => api("/api/contact/links", { method: "POST", body: JSON.stringify({ key, links }) })
+// corre Apify anónimo (30-120s) → devuelve el enrichment. Mostrar spinner.
+export const investigateContact = (key, links) => api("/api/contact/investigate", { method: "POST", body: JSON.stringify({ key, links }) })

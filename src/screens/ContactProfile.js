@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput,
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Line } from "react-native-svg"
 import { theme } from "../theme"
-import { getPerson, getThread, getMergeSuggestions, mergeContacts, getThreads } from "../api"
+import { getPerson, getThread, getMergeSuggestions, mergeContacts, getThreads, getContactSocial, setContactLinks, investigateContact } from "../api"
 import { initials, hhmm } from "../util"
 import { useT } from "../i18n"
 import Avatar from "../components/Avatar"
@@ -39,6 +39,36 @@ function Graph({ nm, photo, people, groups, orgs, onPerson }) {
   )
 }
 
+// EGO-GRAFO social: 1 persona en el centro + sus relaciones (profiles.relationships[]) alrededor, coloreadas por tipo.
+// Radial hecho a mano con react-native-svg (líneas) + nodos posicionados en absoluto — chico, alcanza para un solo contacto.
+const REL_COLORS = { family: "#f59e0b", familia: "#f59e0b", friend: "#10b981", amigo: "#10b981", work: "#6366f1", trabajo: "#6366f1", colleague: "#6366f1", colega: "#6366f1", partner: "#ec4899", pareja: "#ec4899", school: "#0ea5e9", escuela: "#0ea5e9", client: "#14b8a6", cliente: "#14b8a6" }
+const relColor = (ty) => REL_COLORS[String(ty || "").toLowerCase().trim()] || "#8b8b9a"
+function EgoGraph({ nm, photo, rels }) {
+  const list = (rels || []).filter((r) => r && r.name).slice(0, 10)
+  if (!list.length) return null
+  const W = 330, H = 250, CX = W / 2, CY = H / 2, R = 92
+  const N = Math.max(1, list.length)
+  const nodes = list.map((rl, i) => { const ang = -Math.PI / 2 + (i / N) * 2 * Math.PI; return { ...rl, x: CX + Math.cos(ang) * R, y: CY + Math.sin(ang) * R * 0.82 } })
+  return (
+    <View style={{ width: W, height: H, alignSelf: "center", marginTop: 4 }}>
+      <Svg width={W} height={H} style={{ position: "absolute" }}>
+        {nodes.map((n, i) => <Line key={i} x1={CX} y1={CY} x2={n.x} y2={n.y} stroke={relColor(n.type)} strokeOpacity={0.45} strokeWidth={1.5} />)}
+      </Svg>
+      {nodes.map((n, i) => { const c = relColor(n.type)
+        return (
+          <View key={i} style={{ position: "absolute", left: n.x - 34, top: n.y - 20, width: 68, alignItems: "center" }}>
+            <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: c, justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: theme.card }}>
+              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "800" }}>{initials(n.name)}</Text>
+            </View>
+            <Text numberOfLines={1} style={{ fontSize: 9.5, color: theme.muted, marginTop: 2, maxWidth: 66 }}>{n.name}</Text>
+            {n.type ? <Text numberOfLines={1} style={{ fontSize: 8.5, color: c, maxWidth: 66, fontWeight: "700" }}>{n.type}</Text> : null}
+          </View>
+        ) })}
+      <View style={{ position: "absolute", left: CX - 30, top: CY - 30 }}><Avatar name={nm} photo={photo} size={60} /></View>
+    </View>
+  )
+}
+
 const CH = { whatsapp: { t: "WhatsApp", c: "#25D366" }, email: { t: "Mail", c: "#EA4335" }, telegram: { t: "Telegram", c: "#229ED9" }, instagram: { t: "Instagram", c: "#E1306C" }, signal: { t: "Signal", c: "#3A76F0" }, teams: { t: "Teams", c: "#5B5FC7" }, messenger: { t: "Messenger", c: "#0084FF" }, sms: { t: "SMS", c: "#34C759" } }
 const chName = (c) => (CH[c] ? CH[c].t : c)
 const mediaIcon = (m) => !m.media ? "" : (m.mediaType === "audio" ? "🎤 " : m.mediaType === "video" ? "📹 " : (m.mediaType === "image" || m.mediaType === "sticker") ? "🖼 " : "📎 ")
@@ -54,6 +84,10 @@ export default function ContactProfile({ route, navigation }) {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [chTab, setChTab] = useState("all")
+  // enriquecimiento social (Apify anónimo)
+  const [social, setSocial] = useState(null) // { links, profiles, sources, errors, updatedAt } | null
+  const [links, setLinks] = useState({ linkedin: "", instagram: "", facebook: "", x: "" })
+  const [investigating, setInvestigating] = useState(false)
   // merge
   const [mergeOpen, setMergeOpen] = useState(false)
   const [sugs, setSugs] = useState(null)
@@ -62,10 +96,27 @@ export default function ContactProfile({ route, navigation }) {
   const [merging, setMerging] = useState(false)
 
   const loadMsgs = useCallback((key) => { getThread(key || paramName).then((d) => setMsgsAll(d.items || [])).catch(() => {}) }, [paramName])
+  const loadSocial = useCallback((key) => {
+    getContactSocial(key || paramName).then((s) => {
+      if (!s) return
+      setSocial(s)
+      const lk = s.links || {}
+      setLinks({ linkedin: lk.linkedin || "", instagram: lk.instagram || "", facebook: lk.facebook || "", x: lk.x || "" })
+    }).catch(() => {})
+  }, [paramName])
   useEffect(() => {
-    getPerson(paramName).then((r) => { setP(r || {}); setLoading(false); loadMsgs((r && (r.canon || r.key)) || paramName) }).catch((e) => { if (e && e.code === 401) navigation.replace("Login"); setLoading(false) })
+    getPerson(paramName).then((r) => { setP(r || {}); setLoading(false); const ck = (r && (r.canon || r.key)) || paramName; loadMsgs(ck); loadSocial(ck) }).catch((e) => { if (e && e.code === 401) navigation.replace("Login"); setLoading(false) })
     loadMsgs()
   }, [paramName])
+  // key canónica del contacto para las llamadas de social/links/investigate
+  const socialKey = () => (p && (p.canon || p.key)) || paramName
+  const currentLinks = () => ({ linkedin: links.linkedin.trim(), instagram: links.instagram.trim(), facebook: links.facebook.trim(), x: links.x.trim() })
+  async function saveLinks() { try { await setContactLinks(socialKey(), currentLinks()) } catch {} }
+  async function investigate() {
+    setInvestigating(true)
+    try { const r = await investigateContact(socialKey(), currentLinks()); if (r) setSocial(r) } catch (e) { Alert.alert("Error", (e && e.message) || "") }
+    setInvestigating(false)
+  }
 
   // EXPLORAR = generar el grafify COMPLETO on-demand (fuerza regeneración de la card + recarga mensajes)
   async function generate() {
@@ -161,6 +212,52 @@ export default function ContactProfile({ route, navigation }) {
         ) : null}
 
         {p.bio ? <View style={card}><Text style={cardHead}>{"✦ " + t("who_is")}</Text><Text style={{ fontSize: 14.5, color: theme.ink, lineHeight: 21 }}>{p.bio}</Text></View> : null}
+
+        {/* ENRIQUECIMIENTO SOCIAL: pegar links → Investigar (Apify anónimo) → resumen + ego-grafo */}
+        <View style={card}>
+          <Text style={cardHead}>{"🔎 " + t("social_profiles")}</Text>
+          <Text style={{ fontSize: 12, color: theme.muted, marginBottom: 10, lineHeight: 16 }}>{t("social_hint")}</Text>
+          {[["linkedin", "linkedin.com/in/…"], ["instagram", "instagram.com/…"], ["facebook", "facebook.com/…"], ["x", "x.com/…"]].map(([k, ph]) => (
+            <View key={k} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <Text style={{ width: 72, fontSize: 12.5, color: theme.muted, fontWeight: "700" }}>{k === "x" ? "X" : k[0].toUpperCase() + k.slice(1)}</Text>
+              <TextInput value={links[k]} onChangeText={(v) => setLinks((s) => ({ ...s, [k]: v }))} onBlur={saveLinks} placeholder={ph} placeholderTextColor={theme.muted2} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={{ flex: 1, backgroundColor: theme.bg, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, fontSize: 13.5, color: theme.ink }} />
+            </View>
+          ))}
+          <TouchableOpacity onPress={investigate} disabled={investigating} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 12, alignItems: "center", marginTop: 4, flexDirection: "row", justifyContent: "center", gap: 8, opacity: investigating ? 0.85 : 1 }}>
+            {investigating ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontSize: 14 }}>🔍</Text>}
+            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14.5 }}>{investigating ? t("investigating") : t("investigate")}</Text>
+          </TouchableOpacity>
+
+          {social && social.profiles ? (
+            <View style={{ marginTop: 14 }}>
+              {social.profiles.summary ? <Text style={{ fontSize: 14, color: theme.ink, lineHeight: 20 }}>{social.profiles.summary}</Text> : null}
+              {[social.profiles.role, social.profiles.company, social.profiles.location].filter(Boolean).length ? (
+                <Text style={{ fontSize: 12.5, color: theme.muted, marginTop: 6, fontWeight: "600" }}>{[social.profiles.role, social.profiles.company, social.profiles.location].filter(Boolean).join(" · ")}</Text>
+              ) : null}
+              {(social.profiles.interests || []).length ? (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 10 }}>
+                  {social.profiles.interests.map((it, i) => <View key={i} style={chip}><Text style={{ fontSize: 12, color: theme.ink }}>{it}</Text></View>)}
+                </View>
+              ) : null}
+              {(social.profiles.relationships || []).length ? (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={cardHead}>{t("relationships_hd")}</Text>
+                  <EgoGraph nm={nm} photo={photo || p.photo} rels={social.profiles.relationships} />
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {social && social.errors && Object.keys(social.errors).length ? (
+            <View style={{ marginTop: 10 }}>
+              {Object.entries(social.errors).map(([plat, err]) => <Text key={plat} style={{ fontSize: 11.5, color: theme.urgent, marginTop: 2 }}>⚠ {plat}: {String(err)}</Text>)}
+            </View>
+          ) : null}
+
+          {social && (social.sources || []).length ? (
+            <Text style={{ fontSize: 11, color: theme.muted2, marginTop: 10 }}>{t("sources_hd")}: {social.sources.map((s) => typeof s === "string" ? s : (s && (s.url || s.name || s.platform))).filter(Boolean).join(" · ")}</Text>
+          ) : null}
+        </View>
 
         <View style={{ ...card, flexDirection: "row" }}>
           <Stat v={resp} l={t("responds")} c={theme.ok} />

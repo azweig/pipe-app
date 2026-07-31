@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react"
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy } from "../api"
+import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -11,6 +11,8 @@ import WhatsAppImportCard from "../components/WhatsAppImport"
 const AI_PROV = [["openai", "OpenAI"], ["anthropic", "Anthropic (Claude)"], ["gemini", "Google Gemini"]]
 const PLABEL = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini", ollama: "Ollama (local)", gestionado: "GPU box (gestionado)" }
 const soundOn = () => true // el sonido vive en la web/app-shell; acá mostramos el toggle de notif-prefs
+// GET devuelve {accounts,…}; POST puede devolver {accounts} o el array pelado — normalizamos siempre a {accounts:[…]}
+const normApify = (r) => !r ? null : (Array.isArray(r) ? { accounts: r } : (Array.isArray(r.accounts) ? r : null))
 
 function Card({ title, children }) {
   return <View style={{ marginTop: 18 }}>
@@ -34,6 +36,8 @@ export default function Settings({ navigation }) {
   const [authS, setAuthS] = useState({})
   const [apPol, setApPol] = useState({ presets: [], custom: [], presets_available: [] }) // 🤖 política global del piloto
   const [apCustom, setApCustom] = useState("")
+  const [apify, setApify] = useState({ accounts: [] }) // 🔎 cuentas Apify (enriquecimiento social)
+  const [apf, setApf] = useState({ name: "", token: "" })
   const [sheet, setSheet] = useState(null)
   const [busy, setBusy] = useState(false)
   // forms
@@ -42,12 +46,14 @@ export default function Settings({ navigation }) {
   const [pin, setPin] = useState({ old: "", nu: "" })
 
   const load = useCallback(async () => {
-    const [h, a, l, v, n, s, ap] = await Promise.all([
+    const [h, a, l, v, n, s, ap, af] = await Promise.all([
       getHubConfig().catch(() => ({})), getAccounts().catch(() => ({ email: [] })), getLlmConfig().catch(() => ({})),
       getVoices().catch(() => ({ voices: [] })), getNotifPrefs().catch(() => ({})), getAuthStatus().catch(() => ({})),
       getAutopilotPolicy().catch(() => ({ presets: [], custom: [], presets_available: [] })),
+      getApifyAccounts().catch(() => ({ accounts: [] })),
     ])
     setHub(h); setAccts(a || { email: [] }); setLlm(l || {}); setVoices(v || { voices: [] }); setNotif(n || {}); setAuthS(s || {})
+    setApify(normApify(af) || { accounts: [] })
     const apx = ap || { presets: [], custom: [], presets_available: [] }
     setApPol({ presets: apx.presets || [], custom: apx.custom || [], presets_available: apx.presets_available || [] })
     setApCustom((apx.custom || []).join(", "))
@@ -94,6 +100,16 @@ export default function Settings({ navigation }) {
       setApPol((cur) => ({ presets: r.presets || cur.presets, custom: r.custom || custom, presets_available: r.presets_available || cur.presets_available }))
       setApCustom(((r.custom || custom) || []).join(", ")); Alert.alert("✓", t("ap_saved"))
     } else Alert.alert("No se pudo", (r && r.error) || "")
+  }
+  async function doAddApify() {
+    if (!apf.name.trim() || !apf.token.trim()) return Alert.alert(t("could_not"), t("apify_need_fields"))
+    setBusy(true); const r = await addApifyAccount(apf.name.trim(), apf.token.trim()).catch(() => ({ error: "error" })); setBusy(false)
+    const nx = normApify(r)
+    if (nx) { setApify(nx); setSheet(null); setApf({ name: "", token: "" }); Alert.alert("✓", t("apify_added")) }
+    else Alert.alert(t("could_not"), (r && r.error) || "")
+  }
+  function doRemoveApify(id) {
+    Alert.alert(t("remove"), "", [{ text: t("no") !== "no" ? t("no") : "No" }, { text: t("remove"), style: "destructive", onPress: async () => { const r = await removeApifyAccount(id).catch(() => null); const nx = normApify(r); if (nx) setApify(nx) } }])
   }
   async function doChangePin() {
     if (!pin.nu || (authS.pinSet && !pin.old)) return Alert.alert("Faltan datos")
@@ -143,6 +159,28 @@ export default function Settings({ navigation }) {
             <Row key={k.id}><Text style={{ fontSize: 18 }}>{k.provider === "ollama" || k.provider === "gestionado" ? "🖥️" : "🔑"}</Text><View style={{ flex: 1 }}><Text style={{ fontSize: 14.5, color: theme.ink, fontWeight: "500" }}>{k.name || k.provider}</Text><Text style={{ fontSize: 12, color: theme.muted2 }}>{PLABEL[k.provider] || k.provider}</Text></View>{k.hasToken ? <Text style={{ color: theme.ok, fontSize: 13 }}>✓</Text> : null}</Row>
           ))}
           <Row onPress={() => setSheet("addKey")} last><Text style={{ fontSize: 18 }}>➕</Text><Text style={{ fontSize: 15, color: theme.accent, fontWeight: "600" }}>{t("add_key")}</Text></Row>
+        </Card>
+
+        <Card title={"🔎 " + t("apify_title")}>
+          <View style={{ paddingHorizontal: 14, paddingTop: 11, paddingBottom: 5 }}>
+            <Text style={{ fontSize: 12.5, color: theme.muted, lineHeight: 17 }}>{t("apify_help")}</Text>
+          </View>
+          {(apify.accounts || []).length === 0 ? (
+            <View style={{ paddingHorizontal: 14, paddingVertical: 8 }}><Text style={{ fontSize: 13, color: theme.muted2 }}>{t("apify_none")}</Text></View>
+          ) : (apify.accounts || []).map((ac) => (
+            <Row key={ac.id}>
+              <Text style={{ fontSize: 18 }}>{ac.exhausted ? "⛔" : "🔎"}</Text>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text style={{ fontSize: 14.5, color: theme.ink, fontWeight: "500" }}>{ac.name}</Text>
+                  {ac.exhausted ? <View style={{ backgroundColor: theme.urgent + "22", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}><Text style={{ fontSize: 10, fontWeight: "800", color: theme.urgent }}>{t("apify_exhausted")}</Text></View> : null}
+                </View>
+                <Text style={{ fontSize: 12, color: theme.muted2 }}>{(ac.runs || 0) + " " + t("apify_runs") + " · $" + (ac.usd != null ? Number(ac.usd).toFixed(2) : "0.00")}{ac.hint ? " · ••••" + ac.hint : ""}</Text>
+              </View>
+              <TouchableOpacity onPress={() => doRemoveApify(ac.id)} hitSlop={8}><Text style={{ color: theme.urgent, fontSize: 16 }}>✕</Text></TouchableOpacity>
+            </Row>
+          ))}
+          <Row onPress={() => setSheet("addApify")} last><Text style={{ fontSize: 18 }}>➕</Text><Text style={{ fontSize: 15, color: theme.accent, fontWeight: "600" }}>{t("apify_add")}</Text></Row>
         </Card>
 
         <LocalAICard t={t} />
@@ -217,6 +255,14 @@ export default function Settings({ navigation }) {
           <TouchableOpacity onPress={testKey} style={{ flex: 1, borderRadius: 12, padding: 13, alignItems: "center", backgroundColor: theme.bg }}><Text style={{ color: theme.ink, fontWeight: "600" }}>Probar</Text></TouchableOpacity>
           <TouchableOpacity onPress={saveKey} style={{ flex: 1, borderRadius: 12, padding: 13, alignItems: "center", backgroundColor: theme.accent }}><Text style={{ color: "#fff", fontWeight: "700" }}>Agregar</Text></TouchableOpacity>
         </View>
+      </Sheet>
+
+      <Sheet visible={sheet === "addApify"} onClose={() => setSheet(null)}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>{t("apify_add")}</Text>
+        <Text style={{ color: theme.muted, marginBottom: 12, fontSize: 13, lineHeight: 18 }}>{t("apify_help")}</Text>
+        <TextInput value={apf.name} onChangeText={(v) => setApf((a) => ({ ...a, name: v }))} placeholder={t("apify_name_ph")} placeholderTextColor={theme.muted2} style={inp} />
+        <TextInput value={apf.token} onChangeText={(v) => setApf((a) => ({ ...a, token: v }))} placeholder={t("apify_token_ph")} placeholderTextColor={theme.muted2} secureTextEntry autoCapitalize="none" autoCorrect={false} style={inp} />
+        <TouchableOpacity onPress={doAddApify} style={{ backgroundColor: theme.accent, borderRadius: 12, padding: 14, alignItems: "center", marginTop: 4 }}><Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>{t("add")}</Text></TouchableOpacity>
       </Sheet>
 
       <Sheet visible={sheet === "pin"} onClose={() => setSheet(null)}>
