@@ -111,7 +111,7 @@ export default function ContactProfile({ route, navigation }) {
   // key canónica del contacto para las llamadas de social/links/investigate
   const socialKey = () => (p && (p.canon || p.key)) || paramName
   const currentLinks = () => ({ linkedin: links.linkedin.trim(), instagram: links.instagram.trim(), facebook: links.facebook.trim(), x: links.x.trim() })
-  async function saveLinks() { try { await setContactLinks(socialKey(), currentLinks()) } catch {} }
+  async function saveLinks(toast) { try { await setContactLinks(socialKey(), currentLinks()); if (toast === true) Alert.alert("✓", t("links_saved") || "Links guardados") } catch {} }
   async function investigate() {
     setInvestigating(true)
     try { const r = await investigateContact(socialKey(), currentLinks()); if (r) setSocial(r) } catch (e) { Alert.alert("Error", (e && e.message) || "") }
@@ -220,13 +220,18 @@ export default function ContactProfile({ route, navigation }) {
           {[["linkedin", "linkedin.com/in/…"], ["instagram", "instagram.com/…"], ["facebook", "facebook.com/…"], ["x", "x.com/…"]].map(([k, ph]) => (
             <View key={k} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <Text style={{ width: 72, fontSize: 12.5, color: theme.muted, fontWeight: "700" }}>{k === "x" ? "X" : k[0].toUpperCase() + k.slice(1)}</Text>
-              <TextInput value={links[k]} onChangeText={(v) => setLinks((s) => ({ ...s, [k]: v }))} onBlur={saveLinks} placeholder={ph} placeholderTextColor={theme.muted2} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={{ flex: 1, backgroundColor: theme.bg, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, fontSize: 13.5, color: theme.ink }} />
+              <TextInput value={links[k]} onChangeText={(v) => setLinks((s) => ({ ...s, [k]: v }))} onBlur={() => saveLinks()} placeholder={ph} placeholderTextColor={theme.muted2} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={{ flex: 1, backgroundColor: theme.bg, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, fontSize: 13.5, color: theme.ink }} />
             </View>
           ))}
-          <TouchableOpacity onPress={investigate} disabled={investigating} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 12, alignItems: "center", marginTop: 4, flexDirection: "row", justifyContent: "center", gap: 8, opacity: investigating ? 0.85 : 1 }}>
-            {investigating ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontSize: 14 }}>🔍</Text>}
-            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14.5 }}>{investigating ? t("investigating") : t("investigate")}</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+            <TouchableOpacity onPress={() => saveLinks(true)} disabled={investigating} style={{ flex: 1, backgroundColor: theme.bg, borderWidth: 1, borderColor: theme.line, borderRadius: 12, paddingVertical: 12, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}>
+              <Text style={{ fontSize: 14 }}>💾</Text><Text style={{ color: theme.ink, fontWeight: "700", fontSize: 14.5 }}>{t("save") || "Guardar"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={investigate} disabled={investigating} style={{ flex: 1, backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 12, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8, opacity: investigating ? 0.85 : 1 }}>
+              {investigating ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontSize: 14 }}>🔍</Text>}
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14.5 }}>{investigating ? t("investigating") : t("investigate")}</Text>
+            </TouchableOpacity>
+          </View>
 
           {social && social.profiles ? (
             <View style={{ marginTop: 14 }}>
