@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react"
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil } from "../api"
+import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -45,6 +45,7 @@ export default function Settings({ navigation }) {
   const [key, setKey] = useState({ provider: "openai", name: "", token: "", test: "" })
   const [pin, setPin] = useState({ old: "", nu: "" })
   const [council, setCouncil] = useState({ enabled: false, members: [], chairman: "", available: [] })
+  const [tcard, setTcard] = useState(null); const [tloading, setTloading] = useState(false); const [tedit, setTedit] = useState(false); const [tfix, setTfix] = useState(""); const [tcount, setTcount] = useState(0)
 
   const load = useCallback(async () => {
     const [h, a, l, v, n, s, ap, af, co] = await Promise.all([
@@ -102,6 +103,11 @@ export default function Settings({ navigation }) {
     setBusy(true); const r = await apiSetCouncil({ enabled: council.enabled, members: council.members || [], chairman: council.chairman || "" }).catch(() => null); setBusy(false)
     Alert.alert(r ? "✓" : "Error", r ? (t("saved") || "Guardado") : "")
   }
+  // 🎓 Entrená tu IA: mazo de corrección
+  async function loadCard() { setTloading(true); setTedit(false); const c = await getTrainCard().catch(() => ({ error: "x" })); setTcard(c); setTfix((c && c.draft) || ""); setTloading(false) }
+  async function openTrain() { setSheet("train"); loadCard() }
+  async function trainOk() { if (tcard && tcard.key) await autopilotFeedbackMsg(tcard.key, true, "", tcard.draft || "").catch(() => {}); setTcount((n) => n + 1); loadCard() }
+  async function trainSave() { const v = (tfix || "").trim(); if (!v || !tcard || !tcard.key) return; await autopilotFeedbackMsg(tcard.key, false, v, tcard.draft || "").catch(() => {}); setTcount((n) => n + 1); loadCard() }
   async function saveAutopilotPolicy() {
     const custom = apCustom.split(",").map((s) => s.trim()).filter(Boolean)
     setBusy(true); const r = await setAutopilotPolicy(apPol.presets || [], custom).catch(() => null); setBusy(false)
@@ -266,6 +272,13 @@ export default function Settings({ navigation }) {
           </View>
         </Card>
 
+        <Card title={"🎓 " + (t("train_title") || "Entrená tu IA")}>
+          <View style={{ paddingHorizontal: 14, paddingTop: 11, paddingBottom: 3 }}>
+            <Text style={{ fontSize: 12.5, color: theme.muted, lineHeight: 17 }}>{t("train_help") || "Te muestro un mensaje real y lo que tu IA contestaría. Aprobalo o corregilo — así aprende tu estilo."}</Text>
+          </View>
+          <Row onPress={openTrain} last><Text style={{ fontSize: 18 }}>✍️</Text><Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>{t("train_open") || "Empezar a corregir"}</Text><Text style={{ color: theme.muted2 }}>›</Text></Row>
+        </Card>
+
         <Card title={"🔒 " + t("security")}>
           <Row onPress={() => setSheet("pin")} last><Text style={{ fontSize: 18 }}>🔒</Text><Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>{authS.pinSet ? t("change_pin") : t("create_pin")}</Text><Text style={{ color: theme.muted2 }}>›</Text></Row>
         </Card>
@@ -302,6 +315,33 @@ export default function Settings({ navigation }) {
         <TextInput value={apf.name} onChangeText={(v) => setApf((a) => ({ ...a, name: v }))} placeholder={t("apify_name_ph")} placeholderTextColor={theme.muted2} style={inp} />
         <TextInput value={apf.token} onChangeText={(v) => setApf((a) => ({ ...a, token: v }))} placeholder={t("apify_token_ph")} placeholderTextColor={theme.muted2} secureTextEntry autoCapitalize="none" autoCorrect={false} style={inp} />
         <TouchableOpacity onPress={doAddApify} style={{ backgroundColor: theme.accent, borderRadius: 12, padding: 14, alignItems: "center", marginTop: 4 }}><Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>{t("add")}</Text></TouchableOpacity>
+      </Sheet>
+
+      <Sheet visible={sheet === "train"} onClose={() => setSheet(null)}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 12 }}>🎓 {t("train_title") || "Entrená tu IA"}</Text>
+        {tloading ? <View style={{ height: 150, justifyContent: "center", alignItems: "center" }}><ActivityIndicator color={theme.accent} /></View>
+          : !tcard || tcard.error ? <View><Text style={{ color: theme.muted, marginBottom: 12 }}>No se pudo cargar.</Text><TouchableOpacity onPress={loadCard} style={{ backgroundColor: theme.bg, borderWidth: 1, borderColor: theme.line, borderRadius: 12, padding: 13, alignItems: "center" }}><Text style={{ color: theme.ink, fontWeight: "700" }}>Reintentar</Text></TouchableOpacity></View>
+            : tcard.none ? <Text style={{ color: theme.muted }}>No hay más mensajes para practicar por ahora — volvé más tarde.</Text>
+              : (<View>
+                <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 8 }}><Text style={{ fontWeight: "700" }}>{tcard.name}</Text> — así viene la charla:</Text>
+                {(tcard.context || []).map((m, i) => (
+                  <View key={i} style={{ flexDirection: "row", justifyContent: m.mine ? "flex-end" : "flex-start", marginVertical: 3 }}>
+                    <Text style={{ maxWidth: "82%", paddingHorizontal: 11, paddingVertical: 7, borderRadius: 13, fontSize: 13.5, overflow: "hidden", backgroundColor: m.mine ? theme.accent : theme.bg, color: m.mine ? "#fff" : theme.ink }}>{m.text}</Text>
+                  </View>))}
+                <View style={{ flexDirection: "row", justifyContent: "flex-start", marginVertical: 4 }}>
+                  <Text style={{ maxWidth: "88%", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 13, fontSize: 14, overflow: "hidden", backgroundColor: theme.bg, color: theme.ink, borderWidth: 2, borderColor: theme.accent }}>{tcard.incoming}</Text>
+                </View>
+                <Text style={{ fontSize: 12.5, color: theme.muted, marginTop: 15, marginBottom: 6 }}>🤖 Tu IA respondería:</Text>
+                {tedit ? <TextInput value={tfix} onChangeText={setTfix} autoFocus multiline style={{ ...inp, minHeight: 64, textAlignVertical: "top" }} />
+                  : <View style={{ padding: 12, borderRadius: 12, backgroundColor: theme.bg, minHeight: 20 }}><Text style={{ fontSize: 14.5, color: tcard.draft ? theme.ink : theme.muted2 }}>{tcard.draft || "(no pudo redactar — escribí cómo responderías vos)"}</Text></View>}
+                {tedit ? <TouchableOpacity onPress={trainSave} style={{ backgroundColor: theme.accent, borderRadius: 12, padding: 13, alignItems: "center", marginTop: 10 }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>💾 {t("save") || "Guardar corrección"}</Text></TouchableOpacity>
+                  : (<View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+                    <TouchableOpacity onPress={() => { setTfix(tcard.draft || ""); setTedit(true) }} style={{ flex: 1, backgroundColor: theme.bg, borderWidth: 1, borderColor: theme.line, borderRadius: 12, padding: 13, alignItems: "center" }}><Text style={{ color: theme.ink, fontWeight: "700" }}>✍️ Así lo diría yo</Text></TouchableOpacity>
+                    <TouchableOpacity onPress={trainOk} style={{ flex: 1, backgroundColor: theme.accent, borderRadius: 12, padding: 13, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800" }}>✓ Está bien</Text></TouchableOpacity>
+                  </View>)}
+                {!tedit ? <TouchableOpacity onPress={loadCard} style={{ padding: 12, alignItems: "center", marginTop: 6 }}><Text style={{ color: theme.muted, fontWeight: "600" }}>⏭️ Saltar este</Text></TouchableOpacity> : null}
+                <Text style={{ textAlign: "center", fontSize: 12, color: theme.muted, marginTop: 8 }}>{tcount} {tcount === 1 ? "corregido" : "corregidos"} · cada uno entrena a tu IA 🧠</Text>
+              </View>)}
       </Sheet>
 
       <Sheet visible={sheet === "pin"} onClose={() => setSheet(null)}>

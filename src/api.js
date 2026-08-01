@@ -87,6 +87,7 @@ export const autopilotFeedbackMsg = (key, good, correction = "", original = "") 
 // 🏖️ piloto automático — política GLOBAL: qué temas escala (te deja a vos) en vez de responder. presets = keys, custom = frases libres.
 export const getAutopilotPolicy = () => api("/api/autopilot/policy")
 export const setAutopilotPolicy = (presets, custom) => api("/api/autopilot/policy", { method: "POST", body: JSON.stringify({ presets, custom }) })
+export const getTrainCard = () => api("/api/autopilot/train-card")
 export const getCouncil = () => api("/api/autopilot/council")
 export const setCouncil = (c) => api("/api/autopilot/council", { method: "POST", body: JSON.stringify(c) })
 export const suggestReply = (key) => api("/api/thread/suggest-reply?key=" + encodeURIComponent(key))
