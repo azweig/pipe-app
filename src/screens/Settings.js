@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react"
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount } from "../api"
+import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -44,14 +44,17 @@ export default function Settings({ navigation }) {
   const [em, setEm] = useState({ name: "", user: "", pass: "" })
   const [key, setKey] = useState({ provider: "openai", name: "", token: "", test: "" })
   const [pin, setPin] = useState({ old: "", nu: "" })
+  const [council, setCouncil] = useState({ enabled: false, members: [], chairman: "", available: [] })
 
   const load = useCallback(async () => {
-    const [h, a, l, v, n, s, ap, af] = await Promise.all([
+    const [h, a, l, v, n, s, ap, af, co] = await Promise.all([
       getHubConfig().catch(() => ({})), getAccounts().catch(() => ({ email: [] })), getLlmConfig().catch(() => ({})),
       getVoices().catch(() => ({ voices: [] })), getNotifPrefs().catch(() => ({})), getAuthStatus().catch(() => ({})),
       getAutopilotPolicy().catch(() => ({ presets: [], custom: [], presets_available: [] })),
       getApifyAccounts().catch(() => ({ accounts: [] })),
+      getCouncil().catch(() => ({ enabled: false, members: [], chairman: "", available: [] })),
     ])
+    setCouncil(co || { enabled: false, members: [], chairman: "", available: [] })
     setHub(h); setAccts(a || { email: [] }); setLlm(l || {}); setVoices(v || { voices: [] }); setNotif(n || {}); setAuthS(s || {})
     setApify(normApify(af) || { accounts: [] })
     const apx = ap || { presets: [], custom: [], presets_available: [] }
@@ -93,6 +96,12 @@ export default function Settings({ navigation }) {
   async function pickVoice(id) { setVoices((v) => ({ ...v, current: id })); await setVoice(id).catch(() => {}) }
   async function saveQuiet(patch) { const p = { ...notif, ...patch }; setNotif(p); await saveNotifPrefs({ quietStart: p.quietStart ?? null, quietEnd: p.quietEnd ?? null }).catch(() => {}) }
   function toggleApPreset(p) { setApPol((cur) => { const has = (cur.presets || []).includes(p); return { ...cur, presets: has ? cur.presets.filter((x) => x !== p) : [...(cur.presets || []), p] } }) }
+  function toggleCouncilMem(m) { setCouncil((c) => { const has = (c.members || []).includes(m); return { ...c, members: has ? c.members.filter((x) => x !== m) : [...(c.members || []), m] } }) }
+  async function saveCouncilCfg() {
+    if (council.enabled && (council.members || []).length < 2) return Alert.alert(t("council") || "Council", t("council_min2") || "Elegí al menos 2 modelos.")
+    setBusy(true); const r = await apiSetCouncil({ enabled: council.enabled, members: council.members || [], chairman: council.chairman || "" }).catch(() => null); setBusy(false)
+    Alert.alert(r ? "✓" : "Error", r ? (t("saved") || "Guardado") : "")
+  }
   async function saveAutopilotPolicy() {
     const custom = apCustom.split(",").map((s) => s.trim()).filter(Boolean)
     setBusy(true); const r = await setAutopilotPolicy(apPol.presets || [], custom).catch(() => null); setBusy(false)
@@ -224,6 +233,36 @@ export default function Settings({ navigation }) {
             <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, marginBottom: 6, letterSpacing: 0.4 }}>{t("ap_custom_label")}</Text>
             <TextInput value={apCustom} onChangeText={setApCustom} placeholder={t("ap_custom_ph")} placeholderTextColor={theme.muted2} autoCapitalize="none" style={{ ...inp, marginBottom: 12 }} />
             <TouchableOpacity onPress={saveAutopilotPolicy} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>{t("save")}</Text></TouchableOpacity>
+          </View>
+        </Card>
+
+        <Card title={"🧠 " + (t("council_title") || "Council de modelos")}>
+          <Row onPress={() => setCouncil((c) => ({ ...c, enabled: !c.enabled }))}>
+            <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: council.enabled ? theme.accent : theme.line, backgroundColor: council.enabled ? theme.accent : "transparent", justifyContent: "center", alignItems: "center" }}>{council.enabled ? <Text style={{ color: "#fff", fontSize: 13, fontWeight: "800" }}>✓</Text> : null}</View>
+            <Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>{t("council_enable") || "Activar council"}</Text>
+          </Row>
+          <View style={{ paddingHorizontal: 14, paddingTop: 4, paddingBottom: 3 }}>
+            <Text style={{ fontSize: 12.5, color: theme.muted, lineHeight: 17 }}>{t("council_help") || "Varios modelos locales redactan y uno elige el mejor. Más calidad, más lento. Elegí 2+."}</Text>
+          </View>
+          {(council.available || []).filter((m) => !/deepseek|embed|:3b/.test(m)).map((m) => {
+            const on = (council.members || []).includes(m)
+            return (
+              <Row key={m} onPress={() => toggleCouncilMem(m)}>
+                <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: on ? theme.accent : theme.line, backgroundColor: on ? theme.accent : "transparent", justifyContent: "center", alignItems: "center" }}>{on ? <Text style={{ color: "#fff", fontSize: 13, fontWeight: "800" }}>✓</Text> : null}</View>
+                <Text style={{ flex: 1, fontSize: 14.5, color: theme.ink }}>{m}</Text>
+              </Row>
+            )
+          })}
+          <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 13 }}>
+            <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, marginBottom: 6, letterSpacing: 0.4 }}>{(t("council_chairman") || "Chairman (el que elige)").toUpperCase()}</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7, marginBottom: 12 }}>
+              {["", ...(council.available || []).filter((m) => !/deepseek|embed|:3b/.test(m))].map((m) => (
+                <TouchableOpacity key={m || "auto"} onPress={() => setCouncil((c) => ({ ...c, chairman: m }))} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 9, backgroundColor: council.chairman === m ? theme.accent : theme.bg, borderWidth: 1, borderColor: council.chairman === m ? theme.accent : theme.line }}>
+                  <Text style={{ fontSize: 12.5, color: council.chairman === m ? "#fff" : theme.ink }}>{m || (t("auto") || "automático")}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity onPress={saveCouncilCfg} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>{t("save")}</Text></TouchableOpacity>
           </View>
         </Card>
 
