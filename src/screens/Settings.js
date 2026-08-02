@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react"
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg } from "../api"
+import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -46,6 +46,7 @@ export default function Settings({ navigation }) {
   const [pin, setPin] = useState({ old: "", nu: "" })
   const [council, setCouncil] = useState({ enabled: false, members: [], chairman: "", available: [] })
   const [tcard, setTcard] = useState(null); const [tloading, setTloading] = useState(false); const [tedit, setTedit] = useState(false); const [tfix, setTfix] = useState(""); const [tcount, setTcount] = useState(0)
+  const [voice, setVoice] = useState(null); const [voiceBusy, setVoiceBusy] = useState(false)
 
   const load = useCallback(async () => {
     const [h, a, l, v, n, s, ap, af, co] = await Promise.all([
@@ -108,6 +109,9 @@ export default function Settings({ navigation }) {
   async function openTrain() { setSheet("train"); loadCard() }
   async function trainOk() { if (tcard && tcard.key) await autopilotFeedbackMsg(tcard.key, true, "", tcard.draft || "").catch(() => {}); setTcount((n) => n + 1); loadCard() }
   async function trainSave() { const v = (tfix || "").trim(); if (!v || !tcard || !tcard.key) return; await autopilotFeedbackMsg(tcard.key, false, v, tcard.draft || "").catch(() => {}); setTcount((n) => n + 1); loadCard() }
+  // 🗣️ Tu voz
+  useEffect(() => { getVoiceProfile().then((v) => { if (v && (v.dialect || v.languages || v.summary)) setVoice(v) }).catch(() => {}) }, [])
+  async function buildVoice() { setVoiceBusy(true); const r = await buildVoiceProfile().catch(() => null); setVoiceBusy(false); if (r && !r.error) setVoice(r); else Alert.alert("No se pudo", "¿Pocos mensajes tuyos?") }
   async function saveAutopilotPolicy() {
     const custom = apCustom.split(",").map((s) => s.trim()).filter(Boolean)
     setBusy(true); const r = await setAutopilotPolicy(apPol.presets || [], custom).catch(() => null); setBusy(false)
@@ -277,6 +281,34 @@ export default function Settings({ navigation }) {
             <Text style={{ fontSize: 12.5, color: theme.muted, lineHeight: 17 }}>{t("train_help") || "Te muestro un mensaje real y lo que tu IA contestaría. Aprobalo o corregilo — así aprende tu estilo."}</Text>
           </View>
           <Row onPress={openTrain} last><Text style={{ fontSize: 18 }}>✍️</Text><Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>{t("train_open") || "Empezar a corregir"}</Text><Text style={{ color: theme.muted2 }}>›</Text></Row>
+        </Card>
+
+        <Card title={"🗣️ " + (t("voice_title") || "Tu voz")}>
+          <View style={{ paddingHorizontal: 14, paddingTop: 11, paddingBottom: 13 }}>
+            {voice ? (<>
+              {voice.summary ? <Text style={{ fontSize: 13.5, color: theme.muted, lineHeight: 18, marginBottom: 10 }}>{voice.summary}</Text> : null}
+              {(voice.dialect || []).length ? <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, letterSpacing: 0.4, marginBottom: 4 }}>DIALECTO / NACIONALIDAD</Text> : null}
+              {(voice.dialect || []).filter((x) => x.name).map((x, i) => {
+                const p = Math.max(2, Math.min(100, x.pct || 0)), cols = ["#6366f1", "#e0872b", "#22a06b", "#e2483d"]
+                return (<View key={i} style={{ marginVertical: 5 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}><Text style={{ fontSize: 13.5, color: theme.ink }}>{x.name}</Text><Text style={{ fontSize: 13.5, fontWeight: "800", color: theme.ink }}>{p}%</Text></View>
+                  <View style={{ height: 8, borderRadius: 6, backgroundColor: theme.bg, overflow: "hidden" }}><View style={{ height: "100%", width: p + "%", backgroundColor: cols[i % cols.length], borderRadius: 6 }} /></View>
+                </View>)
+              })}
+              {(voice.languages || []).length ? <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, letterSpacing: 0.4, marginTop: 12, marginBottom: 4 }}>IDIOMAS</Text> : null}
+              {(voice.languages || []).filter((x) => x.name).map((x, i) => {
+                const p = Math.max(2, Math.min(100, x.pct || 0))
+                return (<View key={i} style={{ marginVertical: 5 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}><Text style={{ fontSize: 13.5, color: theme.ink }}>{x.name}</Text><Text style={{ fontSize: 13.5, fontWeight: "800", color: theme.ink }}>{p}%</Text></View>
+                  <View style={{ height: 8, borderRadius: 6, backgroundColor: theme.bg, overflow: "hidden" }}><View style={{ height: "100%", width: p + "%", backgroundColor: "#3b82f6", borderRadius: 6 }} /></View>
+                </View>)
+              })}
+              {(voice.tone || []).length ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 12 }}>{voice.tone.map((tn, i) => <View key={i} style={{ backgroundColor: theme.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}><Text style={{ fontSize: 12.5, color: theme.ink }}>{tn}</Text></View>)}</View> : null}
+            </>) : <Text style={{ fontSize: 12.5, color: theme.muted, lineHeight: 17, marginBottom: 8 }}>{t("voice_help") || "La IA analiza tus mensajes y detecta tu tonalidad (idiomas, dialecto, tono)."}</Text>}
+            <TouchableOpacity onPress={buildVoice} disabled={voiceBusy} style={{ backgroundColor: voice ? theme.bg : theme.accent, borderWidth: voice ? 1 : 0, borderColor: theme.line, borderRadius: 12, paddingVertical: 12, alignItems: "center", marginTop: 12 }}>
+              <Text style={{ color: voice ? theme.ink : "#fff", fontWeight: "700", fontSize: 14.5 }}>{voiceBusy ? (t("analyzing") || "Analizando…") : voice ? "🔄 " + (t("redetect") || "Re-detectar") : "🗣️ " + (t("detect_voice") || "Detectar mi voz")}</Text>
+            </TouchableOpacity>
+          </View>
         </Card>
 
         <Card title={"🔒 " + t("security")}>
