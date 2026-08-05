@@ -1,5 +1,6 @@
 // Cliente de la API del hub. Auth por PIN → el server devuelve el sid en el body; lo mandamos como header Cookie
 // en TODAS las llamadas Y en la media (Image/Video/Audio + subidas), porque el player/uploader nativo no comparte el cookie jar.
+import { AppState } from "react-native"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import * as SecureStore from "expo-secure-store"
 import * as LegacyFS from "expo-file-system/legacy"
@@ -7,6 +8,10 @@ import * as LocalAI from "./localai" // IA local opcional: si está instalada+ac
 
 let BASE = "" // sin server hardcodeado: se configura en el Login (campo "Servidor") y queda guardado en AsyncStorage
 let SID = null
+// 🔒 CUENTAS SECRETAS: token de la sesión secreta SOLO en memoria (nunca a AsyncStorage/SecureStore/SQLite). Se llena al desbloquear
+// con el 2º PIN; al perder foco / tocar "Ocultar" / 5 min inactivo se borra. Mientras está lleno, las requests lo mandan como header
+// y el server devuelve también lo secreto. secretPinSet = hay un 2º PIN configurado → NO cachear/servir mensajes de local (el server filtra).
+let secretTok = null, secretPinSet = false
 
 export async function initBase() {
   try { const s = await AsyncStorage.getItem("serverUrl"); if (s) BASE = s } catch {}
@@ -20,7 +25,8 @@ export async function setBase(url) {
   try { await AsyncStorage.setItem("serverUrl", BASE) } catch {}
   return BASE
 }
-export function authHeaders() { return SID ? { Cookie: "sid=" + SID } : {} }
+// choke point de headers — lo comparten api(), uploadRaw() y mediaSource(). Con el token secreto puesto, TODAS las llamadas lo mandan.
+export function authHeaders() { const h = SID ? { Cookie: "sid=" + SID } : {}; if (secretTok) h["x-secret-token"] = secretTok; return h }
 export function mediaUrl(p) { if (!p) return null; if (/^https?:\/\//.test(p)) return p; return BASE + (p.startsWith("/") ? p : "/" + p) }
 export function mediaSource(p) { const uri = mediaUrl(p); return uri ? { uri, headers: authHeaders() } : null }
 const qs = (o) => Object.entries(o).filter(([, v]) => v != null && v !== "").map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&")
@@ -40,7 +46,53 @@ export async function login(pin) {
 export async function autoLogin() {
   try { const pin = await SecureStore.getItemAsync("pin"); if (!pin) return false; const r = await login(pin); return !!r.ok } catch { return false }
 }
-export async function logout() { try { await SecureStore.deleteItemAsync("pin"); await SecureStore.deleteItemAsync("sid") } catch {}; SID = null }
+export async function logout() { try { await SecureStore.deleteItemAsync("pin"); await SecureStore.deleteItemAsync("sid") } catch {}; SID = null; secretTok = null; secretPinSet = false }
+
+// ══════════ 🔒 CUENTAS SECRETAS ══════════
+// Estado del token (en memoria) + pub/sub para que la bandeja se re-pinte al des/bloquear (sin sacarte del hilo).
+export function secretOn() { return !!secretTok }
+export function isSecretPinSet() { return secretPinSet }
+const _secretSubs = new Set()
+export function onSecretChange(cb) { _secretSubs.add(cb); return () => _secretSubs.delete(cb) }
+function _emitSecret() { for (const f of _secretSubs) { try { f() } catch {} } }
+
+// out-of-focus TOLERANTE: (1) gracia de 1 min desde que pusiste el PIN (el teclado/OS roba el foco justo después y NO debe bloquear);
+// (2) debounce de 6s: si volvés a foreground enseguida, se cancela; solo bloquea si te fuiste de verdad. Además 5 min inactivo en foco → bloquea.
+let _secretIdle = null, _secretUnlockedAt = 0, _secretBlurTimer = null
+function _secretResetIdle() { if (!secretTok) return; clearTimeout(_secretIdle); _secretIdle = setTimeout(() => secretLock(), 5 * 60000) }
+export function secretTouch() { _secretResetIdle() } // llamado ante cualquier toque global → resetea los 5 min
+export function scheduleSecretLock() {
+  if (!secretTok || Date.now() - _secretUnlockedAt < 60000) return // dentro del minuto de gracia → no bloquear
+  clearTimeout(_secretBlurTimer); _secretBlurTimer = setTimeout(() => { if (AppState.currentState !== "active") secretLock() }, 6000)
+}
+export function cancelSecretLock() { clearTimeout(_secretBlurTimer); _secretBlurTimer = null }
+
+// fetch crudo para los endpoints secretos: leemos el body incluso en 401/403 (unlock con PIN malo, endpoints bloqueados) — api() tiraría en 401.
+async function _sfetch(path, opts = {}) {
+  const r = await fetch(BASE + path, { ...opts, headers: { "Content-Type": "application/json", ...authHeaders(), ...(opts.headers || {}) } })
+  return r.json().catch(() => ({}))
+}
+export const getSecretStatus = () => _sfetch("/api/secret/status").catch(() => null)         // → {pinSet, unlocked}
+export const secretSetup = (pin) => _sfetch("/api/secret/setup", { method: "POST", body: JSON.stringify({ pin }) }).catch(() => ({ error: "error" }))
+export async function secretUnlock(pin) {
+  try {
+    const j = await _sfetch("/api/secret/unlock", { method: "POST", body: JSON.stringify({ pin }) })
+    if (j && j.token) { secretTok = j.token; secretPinSet = true; _secretUnlockedAt = Date.now(); _secretResetIdle(); _emitSecret(); return j }
+    return { error: (j && j.error) || "PIN incorrecto" }
+  } catch { return { error: "No pude conectar al servidor." } }
+}
+export async function secretLock() {
+  if (!secretTok) return { ok: true }
+  secretTok = null; clearTimeout(_secretIdle); clearTimeout(_secretBlurTimer) // limpiamos el token ANTES → el POST va sin el header (el server cierra por sesión)
+  try { await fetch(BASE + "/api/secret/lock", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: "{}" }) } catch {}
+  _emitSecret()
+  return { ok: true }
+}
+export const getSecretState = () => _sfetch("/api/secret/state").catch(() => null)            // → {accounts:[{channel,account}], numbers:[…]} (403 si bloqueado)
+export const secretSetWa = (number, secret) => _sfetch("/api/secret/wa", { method: "POST", body: JSON.stringify({ number, secret }) }).catch(() => null)
+export const secretSetAccount = (channel, account, secret) => _sfetch("/api/secret/account", { method: "POST", body: JSON.stringify({ channel, account, secret }) }).catch(() => null)
+// al arrancar (ya logueado): ¿hay 2º PIN? → modo "no cachear mensajes en local". Devuelve true para que el caller purgue lo que haya quedado.
+export async function initSecret() { try { const s = await getSecretStatus(); if (s && s.pinSet) { secretPinSet = true; return true } } catch {}; return false }
 
 async function api(path, opts = {}) {
   const r = await fetch(BASE + path, { ...opts, headers: { "Content-Type": "application/json", ...authHeaders(), ...(opts.headers || {}) } })
@@ -134,6 +186,32 @@ export const getHubConfig = () => api("/api/hub-config")
 export const getAccounts = () => api("/api/accounts")
 export const addEmail = (b) => api("/api/accounts/email", { method: "POST", body: JSON.stringify(b) })
 export const removeEmail = (label) => api("/api/accounts/email/remove", { method: "POST", body: JSON.stringify({ label }) })
+// ── Canales de mensajería (paridad con web/desktop) ──
+// estado AUTORITATIVO: whatsapp{bridge:[num],baileys:[{acc,num}]}, email, otros:[{name,key,ok}] (Telegram/Teams/Notion/Calendar)
+export const getStatus = () => api("/api/status")
+export const getWaStatus = () => api("/api/wa/status") // números de WA caídos → {loggedOut:[...]}
+// cuentas conectadas de un bridge (whatsapp/instagram/facebook/linkedin/discord). refresh=1 re-consulta el bridge
+export const getMatrixLogins = (net, refresh = false) => api("/api/matrix-logins?net=" + encodeURIComponent(net) + (refresh ? "&refresh=1" : ""))
+// arranca la vinculación por el bridge Matrix; phone opcional → login por código en vez de QR
+export const matrixLink = (net, phone = "") => api("/api/matrix-link?" + qs({ net, phone }), { method: "POST", body: "{}" })
+// estado del bridge: { connected, code (login por número), qr (¿hay PNG listo?) }
+export const matrixStatus = (net) => api("/api/matrix-status?net=" + encodeURIComponent(net))
+// vinculación por TOKEN (Discord: su QR suele fallar) → luego se pollea matrixStatus(net)
+export const matrixLinkToken = (net, token) => api("/api/matrix-link-token?net=" + encodeURIComponent(net), { method: "POST", body: JSON.stringify({ token }) })
+// el PNG del QR (autenticado) como {uri,headers} para el <Image>; cache-buster t= para forzar refresco en cada poll
+export const matrixQrSource = (net) => mediaSource("/api/matrix-qr?net=" + encodeURIComponent(net) + "&t=" + Date.now())
+// ── Telegram self-service: teléfono → código → 2FA opcional (GramJS vía el server) ──
+export const telegramStatus = () => api("/api/telegram/status") // {connected,configured,stage,error}
+export const telegramStart = (b) => api("/api/telegram/start", { method: "POST", body: JSON.stringify(b) }) // {phone,apiId?,apiHash?}
+export const telegramCode = (code) => api("/api/telegram/code", { method: "POST", body: JSON.stringify({ code }) })
+export const telegramPassword = (password) => api("/api/telegram/password", { method: "POST", body: JSON.stringify({ password }) })
+export const telegramConnected = () => api("/api/telegram/connected", { method: "POST", body: "{}" })
+// ── Integraciones por token/URL (cifradas en el server): Slack / Signal ──
+export const getIntegrations = () => api("/api/integrations") // {slack:{configured,team}, signal:{configured,number}}
+export const setSlack = (token) => api("/api/integrations/slack", { method: "POST", body: JSON.stringify({ token }) })
+export const removeSlack = () => api("/api/integrations/slack/remove", { method: "POST", body: "{}" })
+export const setSignal = (url, number) => api("/api/integrations/signal", { method: "POST", body: JSON.stringify({ url, number }) })
+export const removeSignal = () => api("/api/integrations/signal/remove", { method: "POST", body: "{}" })
 export const getLlmConfig = () => api("/api/llm-config")
 export const testLlm = (b) => api("/api/llm-config/test", { method: "POST", body: JSON.stringify(b) })
 export const saveLlm = (b) => api("/api/llm-config/save", { method: "POST", body: JSON.stringify(b) })

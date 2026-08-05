@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useCallback } from "react"
-import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar } from "react-native"
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar, Image } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile } from "../api"
+import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -23,6 +23,309 @@ function Card({ title, children }) {
 const Row = ({ children, onPress, last }) => {
   const C = onPress ? TouchableOpacity : View
   return <C onPress={onPress} style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: last ? 0 : 0.5, borderBottomColor: theme.line }}>{children}</C>
+}
+// estilos compartidos por las hojas de canales
+const INP = { backgroundColor: theme.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: theme.ink, marginBottom: 10 }
+const SHEET_TITLE = { fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 6 }
+const PRIMARY = { backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }
+
+// ════════════ MENSAJERÍA / CANALES ════════════
+// Hoja de vinculación por el bridge Matrix (WhatsApp/Instagram/Facebook/LinkedIn): teléfono→código o QR, con poll cada ~3s.
+function BridgeLinkSheet({ visible, onClose, net, label, instr, toast }) {
+  const t = useT()
+  const [phone, setPhone] = useState("")
+  const [msg, setMsg] = useState(null) // {text, err}
+  const [code, setCode] = useState("")
+  const [qrTick, setQrTick] = useState(0)
+  const [hasQr, setHasQr] = useState(false)
+  const [started, setStarted] = useState(false)
+  const [connected, setConnected] = useState(false)
+  const closeRef = useRef(onClose); closeRef.current = onClose
+  // reset al abrir/cerrar → nada queda del intento anterior
+  useEffect(() => { if (!visible) { setPhone(""); setMsg(null); setCode(""); setHasQr(false); setStarted(false); setConnected(false); setQrTick(0) } }, [visible])
+  async function start(byPhone) {
+    const v = byPhone ? phone.trim() : ""
+    if (byPhone && !v) return setMsg({ text: t("ch_need_phone"), err: true })
+    setMsg({ text: t("ch_generating"), err: false }); setCode(""); setHasQr(false)
+    await matrixLink(net, v).catch(() => {})
+    setStarted(true)
+  }
+  useEffect(() => {
+    if (!started || !visible) return
+    let alive = true, tm
+    const tick = async () => {
+      const r = await matrixStatus(net).catch(() => null)
+      if (!alive) return
+      if (r && r.connected) { setConnected(true); toast && toast("✓ " + label); setTimeout(() => closeRef.current(), 1400); return }
+      setCode((r && r.code) || "")
+      if (r && r.qr) { setHasQr(true); setQrTick(Date.now()) }
+      if (alive) tm = setTimeout(tick, 3000)
+    }
+    tm = setTimeout(tick, 700)
+    return () => { alive = false; clearTimeout(tm) }
+  }, [started, visible])
+  // fuente del QR recomputada por cada poll (matrixQrSource añade t=Date.now() → evita cache del Image)
+  const qrSrc = useMemo(() => (hasQr && net ? matrixQrSource(net) : null), [qrTick, hasQr, net])
+  return <Sheet visible={visible} onClose={onClose}>
+    <Text style={SHEET_TITLE}>{label}</Text>
+    <Text style={{ color: theme.muted, marginBottom: 12, fontSize: 13, lineHeight: 18 }}>{instr || t("ch_wa_instr")}</Text>
+    <TextInput value={phone} onChangeText={setPhone} placeholder={t("ch_phone_ph")} placeholderTextColor={theme.muted2} keyboardType="phone-pad" autoCapitalize="none" style={INP} />
+    <View style={{ flexDirection: "row", gap: 10 }}>
+      <TouchableOpacity onPress={() => start(true)} style={{ ...PRIMARY, flex: 1 }}><Text style={{ color: "#fff", fontWeight: "700" }}>{t("ch_code_by_phone")}</Text></TouchableOpacity>
+      <TouchableOpacity onPress={() => start(false)} style={{ flex: 1, backgroundColor: theme.bg, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}><Text style={{ color: theme.ink, fontWeight: "700" }}>{t("ch_qr")}</Text></TouchableOpacity>
+    </View>
+    <View style={{ marginTop: 16, alignItems: "center", minHeight: 44 }}>
+      {connected ? <Text style={{ color: theme.ok, fontWeight: "800", fontSize: 16 }}>✓ {label}</Text> : (<>
+        {code ? <><Text style={{ fontSize: 12, color: theme.muted, textAlign: "center" }}>{t("ch_link_with_number")}</Text><Text style={{ fontSize: 30, fontWeight: "800", letterSpacing: 5, color: theme.accent, marginVertical: 10 }}>{code}</Text></> : null}
+        {qrSrc ? <Image source={qrSrc} resizeMode="contain" style={{ width: 220, height: 220, backgroundColor: "#fff", borderRadius: 12 }} /> : null}
+        {!code && !qrSrc ? (started ? <ActivityIndicator color={theme.accent} /> : null) : null}
+        {!code && !qrSrc && msg ? <Text style={{ marginTop: 8, fontSize: 13, textAlign: "center", color: msg.err ? theme.urgent : theme.muted }}>{msg.text}</Text> : null}
+      </>)}
+    </View>
+  </Sheet>
+}
+// Discord: vincula por TOKEN (su QR suele fallar) → matrixLinkToken + poll matrixStatus("discord")
+function DiscordLinkSheet({ visible, onClose, toast }) {
+  const t = useT()
+  const [tok, setTok] = useState(""); const [msg, setMsg] = useState(null); const [showHint, setShowHint] = useState(false)
+  const [started, setStarted] = useState(false); const [connected, setConnected] = useState(false)
+  const closeRef = useRef(onClose); closeRef.current = onClose
+  useEffect(() => { if (!visible) { setTok(""); setMsg(null); setShowHint(false); setStarted(false); setConnected(false) } }, [visible])
+  async function submit() {
+    const v = tok.trim()
+    if (!v) return setMsg({ text: t("ch_paste_token_first"), err: true })
+    setMsg({ text: t("ch_linking"), err: false })
+    await matrixLinkToken("discord", v).catch(() => {})
+    setStarted(true)
+  }
+  useEffect(() => {
+    if (!started || !visible) return
+    let alive = true, tm
+    const tick = async () => {
+      const r = await matrixStatus("discord").catch(() => null)
+      if (!alive) return
+      if (r && r.connected) { setConnected(true); toast && toast("✓ Discord"); setTimeout(() => closeRef.current(), 1400); return }
+      if (alive) tm = setTimeout(tick, 3000)
+    }
+    tm = setTimeout(tick, 700)
+    return () => { alive = false; clearTimeout(tm) }
+  }, [started, visible])
+  return <Sheet visible={visible} onClose={onClose}>
+    <Text style={SHEET_TITLE}>Discord</Text>
+    <Text style={{ color: theme.muted, marginBottom: 10, fontSize: 13, lineHeight: 18 }}>{t("ch_discord_sub")}</Text>
+    <TouchableOpacity onPress={() => setShowHint((v) => !v)} hitSlop={6}><Text style={{ color: theme.accent, fontWeight: "600", fontSize: 13, marginBottom: 8 }}>{t("ch_discord_hint_title")}</Text></TouchableOpacity>
+    {showHint ? <Text style={{ color: theme.muted, fontSize: 12.5, lineHeight: 19, marginBottom: 10 }}>{t("ch_discord_hint")}</Text> : null}
+    <TextInput value={tok} onChangeText={(v) => { setTok(v); setMsg(null) }} placeholder={t("ch_discord_ph")} placeholderTextColor={theme.muted2} multiline autoCapitalize="none" autoCorrect={false} style={{ ...INP, minHeight: 60, textAlignVertical: "top" }} />
+    <TouchableOpacity onPress={submit} style={{ ...PRIMARY, marginTop: 4 }}><Text style={{ color: "#fff", fontWeight: "700" }}>{t("ch_link_token")}</Text></TouchableOpacity>
+    <View style={{ marginTop: 12, alignItems: "center", minHeight: 24 }}>
+      {connected ? <Text style={{ color: theme.ok, fontWeight: "800" }}>✓ Discord</Text> : (msg ? <Text style={{ fontSize: 13, color: msg.err ? theme.urgent : theme.muted }}>{msg.text}</Text> : null)}
+    </View>
+  </Sheet>
+}
+// Telegram self-service: teléfono → código → 2FA opcional; poll telegramStatus, luego telegramConnected
+function TelegramLinkSheet({ visible, onClose, configured, toast }) {
+  const t = useT()
+  const [stage, setStage] = useState("phone")
+  const [phone, setPhone] = useState(""); const [apiId, setApiId] = useState(""); const [apiHash, setApiHash] = useState("")
+  const [code, setCode] = useState(""); const [pw, setPw] = useState("")
+  const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false); const [polling, setPolling] = useState(false)
+  const closeRef = useRef(onClose); closeRef.current = onClose
+  const needApi = !configured
+  useEffect(() => { if (!visible) { setStage("phone"); setPhone(""); setApiId(""); setApiHash(""); setCode(""); setPw(""); setMsg(null); setBusy(false); setPolling(false) } }, [visible])
+  async function start() {
+    if (!phone.trim()) return setMsg({ text: t("ch_tg_need_phone"), err: true })
+    setBusy(true); setMsg({ text: t("ch_sending"), err: false })
+    const r = await telegramStart({ phone: phone.trim(), apiId: apiId.trim(), apiHash: apiHash.trim() }).catch(() => null)
+    setBusy(false)
+    if (!r || r.error) return setMsg({ text: (r && r.error) || t("ch_tg_start_fail"), err: true })
+    setMsg(null); setStage("code")
+  }
+  async function submitCode() {
+    if (!code.trim()) return setMsg({ text: t("ch_need_code"), err: true })
+    setBusy(true); setMsg({ text: t("ch_verifying"), err: false }); await telegramCode(code.trim()).catch(() => {}); setBusy(false); setPolling(true)
+  }
+  async function submitPw() { setBusy(true); setMsg({ text: t("ch_verifying"), err: false }); await telegramPassword(pw).catch(() => {}); setBusy(false); setPolling(true) }
+  useEffect(() => {
+    if (!polling || !visible) return
+    let alive = true, tm
+    const tick = async () => {
+      const st = await telegramStatus().catch(() => null)
+      if (!alive) return
+      if (st && st.connected) { setMsg({ text: t("ch_tg_connected"), err: false }); await telegramConnected().catch(() => {}); toast && toast(t("ch_tg_connected")); setTimeout(() => closeRef.current(), 1400); return }
+      if (st && st.stage === "password") { setPolling(false); setStage("password"); setMsg(null); return }
+      if (st && st.stage === "error") { setPolling(false); setMsg({ text: st.error || t("ch_tg_login_err"), err: true }); return }
+      tm = setTimeout(tick, 1500)
+    }
+    tm = setTimeout(tick, 700)
+    return () => { alive = false; clearTimeout(tm) }
+  }, [polling, visible])
+  return <Sheet visible={visible} onClose={onClose}>
+    <Text style={SHEET_TITLE}>Telegram</Text>
+    {stage === "phone" ? (<>
+      <Text style={{ color: theme.muted, marginBottom: 10, fontSize: 13, lineHeight: 18 }}>{t("ch_tg_sub")}</Text>
+      {needApi ? (<>
+        <Text style={{ color: theme.muted, marginBottom: 8, fontSize: 12.5, lineHeight: 17 }}>{t("ch_tg_api_note")}</Text>
+        <TextInput value={apiId} onChangeText={setApiId} placeholder={t("ch_tg_apiid_ph")} placeholderTextColor={theme.muted2} keyboardType="number-pad" style={INP} />
+        <TextInput value={apiHash} onChangeText={setApiHash} placeholder={t("ch_tg_apihash_ph")} placeholderTextColor={theme.muted2} autoCapitalize="none" autoCorrect={false} style={INP} />
+      </>) : null}
+      <TextInput value={phone} onChangeText={setPhone} placeholder={t("ch_phone_ph")} placeholderTextColor={theme.muted2} keyboardType="phone-pad" style={INP} />
+      <TouchableOpacity onPress={start} disabled={busy} style={PRIMARY}><Text style={{ color: "#fff", fontWeight: "700" }}>{busy ? t("ch_sending") : t("ch_send_code")}</Text></TouchableOpacity>
+    </>) : null}
+    {stage === "code" ? (<>
+      <Text style={{ color: theme.muted, marginBottom: 10, fontSize: 13, lineHeight: 18 }}>{t("ch_tg_code_sub")}</Text>
+      <TextInput value={code} onChangeText={setCode} placeholder={t("ch_code_ph")} placeholderTextColor={theme.muted2} keyboardType="number-pad" style={{ ...INP, textAlign: "center", fontSize: 22, letterSpacing: 6 }} />
+      <TouchableOpacity onPress={submitCode} disabled={busy} style={PRIMARY}><Text style={{ color: "#fff", fontWeight: "700" }}>{busy ? "…" : t("ch_confirm")}</Text></TouchableOpacity>
+    </>) : null}
+    {stage === "password" ? (<>
+      <Text style={{ color: theme.muted, marginBottom: 10, fontSize: 13, lineHeight: 18 }}>{t("ch_tg_pw_sub")}</Text>
+      <TextInput value={pw} onChangeText={setPw} placeholder={t("ch_tg_pw_ph")} placeholderTextColor={theme.muted2} secureTextEntry style={INP} />
+      <TouchableOpacity onPress={submitPw} disabled={busy} style={PRIMARY}><Text style={{ color: "#fff", fontWeight: "700" }}>{busy ? "…" : t("ch_confirm")}</Text></TouchableOpacity>
+    </>) : null}
+    {msg ? <Text style={{ marginTop: 10, textAlign: "center", fontSize: 13.5, color: msg.err ? theme.urgent : theme.muted }}>{msg.text}</Text> : null}
+  </Sheet>
+}
+// Slack: token → setSlack
+function SlackSheet({ visible, onClose, onSaved }) {
+  const t = useT()
+  const [tok, setTok] = useState(""); const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false)
+  useEffect(() => { if (!visible) { setTok(""); setMsg(null); setBusy(false) } }, [visible])
+  async function save() {
+    if (!tok.trim()) return setMsg({ text: t("ch_paste_token_first"), err: true })
+    setBusy(true); setMsg({ text: t("ch_verifying"), err: false })
+    const r = await setSlack(tok.trim()).catch(() => null); setBusy(false)
+    if (!r || r.error) return setMsg({ text: (r && r.error) || t("ch_slack_fail"), err: true })
+    Alert.alert("✓", t("ch_slack_ok") + (r.team ? " (" + r.team + ")" : "")); onClose(); onSaved && onSaved()
+  }
+  return <Sheet visible={visible} onClose={onClose}>
+    <Text style={SHEET_TITLE}>Slack</Text>
+    <Text style={{ color: theme.muted, marginBottom: 10, fontSize: 13, lineHeight: 18 }}>{t("ch_slack_help")}</Text>
+    <TextInput value={tok} onChangeText={(v) => { setTok(v); setMsg(null) }} placeholder={t("ch_slack_ph")} placeholderTextColor={theme.muted2} secureTextEntry autoCapitalize="none" autoCorrect={false} style={INP} />
+    <TouchableOpacity onPress={save} disabled={busy} style={PRIMARY}><Text style={{ color: "#fff", fontWeight: "700" }}>{busy ? t("ch_verifying") : t("ch_slack_connect")}</Text></TouchableOpacity>
+    {msg ? <Text style={{ marginTop: 10, textAlign: "center", fontSize: 13, color: msg.err ? theme.urgent : theme.muted }}>{msg.text}</Text> : null}
+  </Sheet>
+}
+// Signal: url + número → setSignal
+function SignalSheet({ visible, onClose, onSaved }) {
+  const t = useT()
+  const [url, setUrl] = useState(""); const [num, setNum] = useState(""); const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false)
+  useEffect(() => { if (!visible) { setUrl(""); setNum(""); setMsg(null); setBusy(false) } }, [visible])
+  async function save() {
+    if (!url.trim() || !num.trim()) return setMsg({ text: t("ch_signal_need"), err: true })
+    setBusy(true); setMsg({ text: t("ch_verifying"), err: false })
+    const r = await setSignal(url.trim(), num.trim()).catch(() => null); setBusy(false)
+    if (!r || r.error) return setMsg({ text: (r && r.error) || t("ch_signal_fail"), err: true })
+    Alert.alert("✓", t("ch_signal_ok")); onClose(); onSaved && onSaved()
+  }
+  return <Sheet visible={visible} onClose={onClose}>
+    <Text style={SHEET_TITLE}>Signal</Text>
+    <Text style={{ color: theme.muted, marginBottom: 10, fontSize: 13, lineHeight: 18 }}>{t("ch_signal_help")}</Text>
+    <TextInput value={url} onChangeText={(v) => { setUrl(v); setMsg(null) }} placeholder={t("ch_signal_url_ph")} placeholderTextColor={theme.muted2} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={INP} />
+    <TextInput value={num} onChangeText={(v) => { setNum(v); setMsg(null) }} placeholder={t("ch_signal_num_ph")} placeholderTextColor={theme.muted2} keyboardType="phone-pad" style={INP} />
+    <TouchableOpacity onPress={save} disabled={busy} style={PRIMARY}><Text style={{ color: "#fff", fontWeight: "700" }}>{busy ? t("ch_verifying") : t("ch_signal_connect")}</Text></TouchableOpacity>
+    {msg ? <Text style={{ marginTop: 10, textAlign: "center", fontSize: 13, color: msg.err ? theme.urgent : theme.muted }}>{msg.text}</Text> : null}
+  </Sheet>
+}
+// Tarjeta principal: estado de todos los canales + filas de cuentas conectadas + apertura de cada hoja
+function ChannelsCard({ t }) {
+  const [status, setStatus] = useState(null)
+  const [waDown, setWaDown] = useState([])
+  const [tg, setTg] = useState({})
+  const [integ, setInteg] = useState(null)
+  const [logins, setLogins] = useState({})
+  const [secret, setSecret] = useState({ numbers: [], accounts: [] })
+  const [secShow, setSecShow] = useState(secretOn())
+  const [open, setOpen] = useState(null) // { kind, net?, label?, instr? }
+  const toast = (m) => Alert.alert(m)
+
+  const reload = useCallback(async () => {
+    const [s, w, tgs, i] = await Promise.all([getStatus().catch(() => null), getWaStatus().catch(() => null), telegramStatus().catch(() => null), getIntegrations().catch(() => null)])
+    if (s) setStatus(s); if (w) setWaDown(w.loggedOut || []); if (tgs) setTg(tgs); if (i) setInteg(i)
+    if (secretOn()) { const ss = await getSecretState().catch(() => null); if (ss) setSecret({ numbers: ss.numbers || [], accounts: ss.accounts || [] }) }
+  }, [])
+  const reloadLogins = useCallback(async () => {
+    for (const net of ["instagram", "facebook", "linkedin", "discord"]) {
+      const r = await getMatrixLogins(net, true).catch(() => null)
+      if (r) setLogins((p) => ({ ...p, [net]: r.accounts || [] }))
+    }
+  }, [])
+  useEffect(() => { reload(); reloadLogins() }, [])
+  // al des/bloquear el 2º PIN: re-pedir estado (con el token aparecen/desaparecen las cuentas secretas)
+  useEffect(() => onSecretChange(() => { setSecShow(secretOn()); reload() }), [])
+  const closeSheet = () => { setOpen(null); reload(); reloadLogins() }
+
+  const fmtAcct = (a) => { const s = String(a).replace(/^\+/, ""); return /^\d+$/.test(s) ? "+" + s : s }
+  const isAcctSecret = (n) => { const d = String(n).replace(/\D/g, ""); return d ? (secret.numbers || []).includes(d) : (secret.numbers || []).includes(String(n)) }
+  async function toggleSecret(n) {
+    const want = !isAcctSecret(n)
+    const r = await secretSetWa(n, want).catch(() => null)
+    if (!r || r.error) return Alert.alert(t("could_not"), (r && r.error) || "")
+    await reload()
+  }
+  function confirmDisconnect(titleKey, fn) {
+    Alert.alert(t(titleKey), "", [{ text: t("cancel") }, { text: t("ch_disconnect"), style: "destructive", onPress: async () => { await fn().catch(() => {}); reload() } }])
+  }
+
+  const waAccounts = [
+    ...((status && status.whatsapp && status.whatsapp.bridge) || []),
+    ...(((status && status.whatsapp && status.whatsapp.baileys) || []).map((b) => b.num || b.acc || "")),
+  ].filter(Boolean)
+  const slackOn = !!(integ && integ.slack && integ.slack.configured)
+  const signalOn = !!(integ && integ.signal && integ.signal.configured)
+  const tgOn = !!(tg && tg.connected)
+
+  const sub = (node) => node
+  const okText = (s) => <Text style={{ fontSize: 12, color: theme.ok }}>{s}</Text>
+  const mutedText = (s) => <Text style={{ fontSize: 12, color: theme.muted2 }}>{s}</Text>
+  const acctSub = (accts) => accts.length ? okText(accts.length + " " + (accts.length > 1 ? t("ch_connected_pl") : t("ch_connected_sg"))) : mutedText(t("ch_no_accounts"))
+  const linkBtn = (label, onPress) => <TouchableOpacity onPress={onPress} hitSlop={8}><Text style={{ color: theme.accent, fontWeight: "700", fontSize: 12.5 }}>{label}</Text></TouchableOpacity>
+  const delBtn = (onPress) => <TouchableOpacity onPress={onPress} hitSlop={8}><Text style={{ color: theme.urgent, fontWeight: "700", fontSize: 12.5 }}>{t("ch_disconnect")}</Text></TouchableOpacity>
+  const chRow = (key, icon, name, subNode, action) => (
+    <Row key={key}>
+      <Text style={{ fontSize: 18 }}>{icon}</Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 14.5, color: theme.ink, fontWeight: "600" }}>{name}</Text>
+        {subNode}
+      </View>
+      {action}
+    </Row>
+  )
+  const acctRows = (accts) => (accts || []).map((a) => (
+    <View key={a} style={{ flexDirection: "row", alignItems: "center", paddingRight: 14, paddingLeft: 44, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: theme.line }}>
+      <Text style={{ flex: 1, fontSize: 13, color: theme.ink, fontWeight: "500" }}>{isAcctSecret(a) ? "🔒 " : ""}{fmtAcct(a)}</Text>
+      {secShow ? <TouchableOpacity onPress={() => toggleSecret(a)} hitSlop={6}><Text style={{ fontSize: 11.5, fontWeight: "600", color: isAcctSecret(a) ? theme.accent : theme.muted }}>{isAcctSecret(a) ? t("ch_secret_on") : t("ch_secret_off")}</Text></TouchableOpacity> : null}
+    </View>
+  ))
+
+  const waSub = <Text style={{ fontSize: 12, color: waAccounts.length ? theme.ok : theme.muted2 }}>
+    {waAccounts.length ? (waAccounts.length + " " + (waAccounts.length > 1 ? t("ch_connected_pl") : t("ch_connected_sg"))) : t("ch_no_accounts")}
+    {waDown.length ? <Text style={{ color: theme.urgent }}>{"  ·  ⚠️ " + t("ch_revincula") + " " + waDown.map(fmtAcct).join(", ")}</Text> : null}
+  </Text>
+
+  return <>
+    <Card title={"📨 " + t("ch_title")}>
+      {chRow("wa", "📲", "WhatsApp", sub(waSub), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net: "whatsapp", label: "WhatsApp" })))}
+      {acctRows(waAccounts)}
+      {chRow("ig", "📷", "Instagram", acctSub(logins.instagram || []), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net: "instagram", label: "Instagram", instr: t("ch_ig_instr") })))}
+      {acctRows(logins.instagram || [])}
+      {chRow("fb", "🔵", "Facebook", acctSub(logins.facebook || []), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net: "facebook", label: "Facebook", instr: t("ch_fb_instr") })))}
+      {acctRows(logins.facebook || [])}
+      {chRow("li", "🔗", "LinkedIn", acctSub(logins.linkedin || []), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net: "linkedin", label: "LinkedIn", instr: t("ch_li_instr") })))}
+      {acctRows(logins.linkedin || [])}
+      {chRow("tg", "✈️", "Telegram", <Text style={{ fontSize: 12, color: tgOn ? theme.ok : theme.muted2 }}>{tgOn ? t("ch_connected") + " ✓ · " + t("ch_read_only") : t("ch_tg_short")}</Text>, tgOn ? <Text style={{ color: theme.ok, fontSize: 15, fontWeight: "800" }}>✓</Text> : linkBtn(t("ch_connect"), () => setOpen({ kind: "telegram" })))}
+      {chRow("discord", "🎮", "Discord", acctSub(logins.discord || []), linkBtn(t("ch_add_account"), () => setOpen({ kind: "discord" })))}
+      {acctRows(logins.discord || [])}
+      {chRow("slack", "💼", "Slack", <Text style={{ fontSize: 12, color: slackOn ? theme.ok : theme.muted2 }}>{slackOn ? t("ch_connected") + " ✓" + (integ && integ.slack && integ.slack.team ? " · " + integ.slack.team : "") : t("ch_slack_sub")}</Text>, slackOn ? delBtn(() => confirmDisconnect("ch_slack_confirm", removeSlack)) : linkBtn(t("ch_connect"), () => setOpen({ kind: "slack" })))}
+      {chRow("signal", "🔒", "Signal", <Text style={{ fontSize: 12, color: signalOn ? theme.ok : theme.muted2 }}>{signalOn ? t("ch_connected") + " ✓" + (integ && integ.signal && integ.signal.number ? " · " + integ.signal.number : "") : t("ch_signal_sub")}</Text>, signalOn ? delBtn(() => confirmDisconnect("ch_signal_confirm", removeSignal)) : linkBtn(t("ch_connect"), () => setOpen({ kind: "signal" })))}
+      <View style={{ paddingHorizontal: 14, paddingVertical: 12 }}>
+        <Text style={{ fontSize: 11.5, color: theme.muted, lineHeight: 16 }}>{t("ch_server_note")}</Text>
+      </View>
+    </Card>
+    <BridgeLinkSheet visible={!!open && open.kind === "bridge"} onClose={closeSheet} net={open && open.net} label={(open && open.label) || ""} instr={open && open.instr} toast={toast} />
+    <DiscordLinkSheet visible={!!open && open.kind === "discord"} onClose={closeSheet} toast={toast} />
+    <TelegramLinkSheet visible={!!open && open.kind === "telegram"} onClose={closeSheet} configured={!!(tg && tg.configured)} toast={toast} />
+    <SlackSheet visible={!!open && open.kind === "slack"} onClose={closeSheet} onSaved={reload} />
+    <SignalSheet visible={!!open && open.kind === "signal"} onClose={closeSheet} onSaved={reload} />
+  </>
 }
 
 export default function Settings({ navigation }) {
@@ -172,6 +475,8 @@ export default function Settings({ navigation }) {
           ))}
           <Row onPress={() => setSheet("addEmail")} last><Text style={{ fontSize: 18 }}>➕</Text><Text style={{ fontSize: 15, color: theme.accent, fontWeight: "600" }}>{t("add_email")}</Text></Row>
         </Card>
+
+        <ChannelsCard t={t} />
 
         <Card title={"🤖 " + t("ai_engine")}>
           {(llm.keysList || []).map((k) => (

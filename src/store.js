@@ -2,6 +2,8 @@
 // de la red baja SOLO el DELTA (mensajes con rev > el que ya tengo). Así los mensajes viejos no se re-descargan — abrir es instantáneo.
 // Un item = una fila (thread, id, ts, rev, json). La metadata del hilo (nombre/foto/maxRev/oldestTs/hasMore) va en tmeta.
 import * as SQLite from "expo-sqlite"
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import { isSecretPinSet } from "./api" // 🔒 con 2º PIN configurado NO persistimos mensajes en disco (una línea oculta no debe quedar en local)
 
 let _dbP
 function db() {
@@ -33,6 +35,7 @@ export async function loadThread(key, limit = 400) {
 
 // upsert de items (por id, ignora los optimistas) + merge de la metadata del hilo
 export async function saveThread(key, items, metaPatch) {
+  if (isSecretPinSet()) return // 🔒 con PIN secreto: nunca escribir mensajes al SQLite del teléfono
   try {
     const d = await db()
     const real = (items || []).filter((it) => it && it.id && !String(it.id).startsWith("opt-"))
@@ -47,4 +50,10 @@ export async function saveThread(key, items, metaPatch) {
       await d.runAsync("INSERT OR REPLACE INTO tmeta (thread, json) VALUES (?,?)", [key, JSON.stringify({ ...prev, ...metaPatch })])
     }
   } catch {}
+}
+
+// 🔒 borra de disco TODO rastro de mensajes cacheados (SQLite msgs/tmeta + la bandeja en AsyncStorage). Se llama al arrancar si hay 2º PIN.
+export async function purgeSecretCache() {
+  try { const d = await db(); await d.execAsync("DELETE FROM msgs; DELETE FROM tmeta;") } catch {}
+  try { await AsyncStorage.removeItem("threads") } catch {}
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react"
-import { View, Text, ActivityIndicator } from "react-native"
+import { View, Text, ActivityIndicator, AppState } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { KeyboardProvider } from "react-native-keyboard-controller"
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native"
@@ -11,7 +11,8 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack"
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs"
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context"
 import { StatusBar } from "expo-status-bar"
-import { initBase, autoLogin } from "./src/api"
+import { initBase, autoLogin, initSecret, scheduleSecretLock, cancelSecretLock, secretTouch } from "./src/api"
+import { purgeSecretCache } from "./src/store"
 import Login from "./src/screens/Login"
 import Inbox from "./src/screens/Inbox"
 import Conversation from "./src/screens/Conversation"
@@ -75,14 +76,18 @@ export default function App() {
       await initBase()
       await initLang()
       const ok = await autoLogin().catch(() => false)
+      // 🔒 ¿hay 2º PIN configurado? → no cachear mensajes en local + purgar lo que haya quedado de antes (cuando estaban visibles)
+      if (ok) { const hasSecret = await initSecret().catch(() => false); if (hasSecret) await purgeSecretCache().catch(() => {}) }
       setAuthed(ok); setReady(true)
     })()
     setupNotifications()
+    // 🔒 out-of-focus lock: al irse a background/inactive programamos el bloqueo (con gracia+debounce en api.js); al volver a activo lo cancelamos.
+    const appSub = AppState.addEventListener("change", (s) => { (s === "background" || s === "inactive") ? scheduleSecretLock() : cancelSecretLock() })
     const sub = Notifications.addNotificationResponseReceivedListener((r) => {
       const d = r?.notification?.request?.content?.data
       if (d && d.convKey && navRef.isReady()) navRef.navigate("Conversation", { convKey: d.convKey, name: d.name || "" })
     })
-    return () => sub.remove()
+    return () => { sub.remove(); appSub && appSub.remove() }
   }, [])
   if (!ready) return <View style={{ flex: 1, justifyContent: "center", backgroundColor: theme.bg }}><ActivityIndicator color={theme.accent} /></View>
   return (
@@ -91,6 +96,8 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <ShareIntentHandler />
+        {/* 🔒 cualquier toque global resetea el temporizador de inactividad (5 min) de la sesión secreta — equivale al click/keydown de la web */}
+        <View style={{ flex: 1 }} onStartShouldSetResponderCapture={() => { secretTouch(); return false }}>
         <NavigationContainer ref={navRef}>
           <Stack.Navigator initialRouteName={authed ? "Main" : "Login"} screenOptions={{ headerShown: false, animation: "slide_from_right", contentStyle: { backgroundColor: theme.bg } }}>
             <Stack.Screen name="Login" component={Login} />
@@ -104,6 +111,7 @@ export default function App() {
             <Stack.Screen name="Alarms" component={Alarms} />
           </Stack.Navigator>
         </NavigationContainer>
+        </View>
       </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>

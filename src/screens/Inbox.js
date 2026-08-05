@@ -5,7 +5,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent, mergeContacts } from "../api"
+import { getThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent, mergeContacts, getAccounts,
+  secretOn, isSecretPinSet, onSecretChange, secretLock, getSecretStatus, secretSetup, secretUnlock, getSecretState, secretSetWa, secretSetAccount } from "../api"
 import { ago, preview, espIcon, bucketCat } from "../util"
 // (ago se usa también en las tarjetas de resultados de la búsqueda contextual)
 import Avatar from "../components/Avatar"
@@ -44,6 +45,20 @@ export default function Inbox({ navigation }) {
   const [merging, setMerging] = useState(false)
   const toggleSel = useCallback((key) => setSelected((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n }), [])
   const exitSel = useCallback(() => { setSelMode(false); setSelected(new Set()) }, [])
+
+  // 🔒 CUENTAS SECRETAS: botón PIN↔Ocultar, gestor de cuentas ocultas y prompt del 2º PIN. El token vive en api.js (solo memoria).
+  const [secUnlocked, setSecUnlocked] = useState(secretOn())
+  const [secManage, setSecManage] = useState(false)            // gestor visible
+  const [secNums, setSecNums] = useState([])                   // números de WhatsApp (de /api/accounts)
+  const [secEmails, setSecEmails] = useState([])               // cuentas de correo
+  const [secState, setSecState] = useState({ numbers: [], accounts: [] }) // qué está marcado como secreto (de /api/secret/state)
+  const [pinPrompt, setPinPrompt] = useState(null)             // { title, sub } | null
+  const [pinVal, setPinVal] = useState("")
+  const pinResolver = useRef(null)
+  const askPin = useCallback((title, sub) => new Promise((resolve) => { pinResolver.current = resolve; setPinVal(""); setPinPrompt({ title, sub }) }), [])
+  const closePin = useCallback((val) => { const r = pinResolver.current; pinResolver.current = null; setPinPrompt(null); setPinVal(""); if (r) r(val) }, [])
+  const isNumSecret = useCallback((n) => (secState.numbers || []).includes(String(n).replace(/\D/g, "")), [secState])
+  const isAcctSecret = useCallback((ch, ac) => (secState.accounts || []).some((a) => a.channel === ch && a.account === ac), [secState])
 
   // botón "atrás" del celular en la bandeja: si hay búsqueda o un filtro de tab activo, lo LIMPIA (no sale de la app). Solo sale si no hay nada que limpiar.
   useEffect(() => {
@@ -85,13 +100,57 @@ export default function Inbox({ navigation }) {
       const clean = arr.filter((t) => t.key && t.key !== "self")
       setRows(clean)
       if (g && g.groups) setGroups(g.groups)
-      AsyncStorage.setItem("threads", JSON.stringify(clean)).catch(() => {})
+      if (!isSecretPinSet()) AsyncStorage.setItem("threads", JSON.stringify(clean)).catch(() => {}) // 🔒 con 2º PIN no persistimos la bandeja (podría traer una línea oculta)
     } catch (e) { if (e && e.code === 401) navigation.replace("Login") } finally { setRefreshing(false) }
   }, [navigation])
 
+  // al des/bloquear (por botón, out-of-focus o inactividad) re-fetch: los hilos secretos aparecen/desaparecen sin sacarte de la vista.
+  useEffect(() => {
+    setSecUnlocked(secretOn())
+    const off = onSecretChange(() => { setSecUnlocked(secretOn()); if (!secretOn()) setSecManage(false); load(false) })
+    return off
+  }, [load])
+
+  // abre el gestor de cuentas ocultas: lista tus números de WhatsApp + cuentas de correo con un toggle ☐/☑ reflejando /api/secret/state.
+  const openSecretManage = useCallback(async () => {
+    if (!secretOn()) return
+    const acc = await getAccounts().catch(() => ({}))
+    const state = await getSecretState().catch(() => null)
+    const nums = (acc.messaging && acc.messaging[0] && acc.messaging[0].numbers) || []
+    setSecNums(nums); setSecEmails(acc.email || []); setSecState(state || { numbers: [], accounts: [] })
+    setSecManage(true)
+  }, [])
+
+  // desbloqueo: status → (si no hay 2º PIN, crearlo) → pedir PIN → unlock. Si NO hay nada marcado aún, abrir el gestor para elegir cuál.
+  const doSecretUnlock = useCallback(async () => {
+    const st = await getSecretStatus(); if (!st) return
+    if (!st.pinSet) {
+      const p1 = await askPin(t("secret_create_pin"), t("secret_create_pin_sub")); if (!p1) return
+      const r = await secretSetup(p1); if (r && r.error) return Alert.alert("", r.error)
+    }
+    const pin = await askPin(t("secret_pin_title"), t("secret_enter_pin")); if (!pin) return
+    const r = await secretUnlock(pin); if (!r || r.error) return Alert.alert("", (r && r.error) || t("secret_wrong_pin"))
+    const state = await getSecretState().catch(() => null); const s = state || { numbers: [], accounts: [] }; setSecState(s)
+    const marked = (s.numbers || []).length + (s.accounts || []).length
+    if (!marked) openSecretManage() // todavía no ocultaste ninguna cuenta → abrí el gestor (así no hay que cazarlo en Ajustes)
+  }, [askPin, t, openSecretManage])
+
+  // marcar/desmarcar: si marcás una cuenta → esconder YA (bloquear + refrescar la bandeja). Si desmarcás → refrescar el estado y seguir en el gestor.
+  const secMark = useCallback(async (fn, want) => {
+    const r = await fn()
+    if (!r) return Alert.alert("", t("secret_save_fail"))
+    if (r.error) { if (r.error === "bloqueado") { Alert.alert("", t("secret_relocked")); setSecManage(false); doSecretUnlock() } else Alert.alert("", r.error); return }
+    const state = await getSecretState().catch(() => null); setSecState(state || { numbers: [], accounts: [] })
+    if (want) { setSecManage(false); await secretLock() } // el lock emite → el subscriber re-fetchea la bandeja y desaparece
+  }, [t, doSecretUnlock])
+  const toggleNum = useCallback((n) => { const want = !isNumSecret(n); secMark(() => secretSetWa(n, want), want) }, [isNumSecret, secMark])
+  const toggleEmail = useCallback((label) => { const want = !isAcctSecret("email", label); secMark(() => secretSetAccount("email", label, want), want) }, [isAcctSecret, secMark])
+  const onSecretBtn = useCallback(() => { secretOn() ? secretLock() : doSecretUnlock() }, [doSecretUnlock])
+
   useEffect(() => {
     (async () => {
-      try { const c = await AsyncStorage.getItem("threads"); if (c) setRows(JSON.parse(c).filter((t) => t.key && t.key !== "self")) } catch {}
+      // 🔒 con 2º PIN configurado saltamos el cache local y traemos fresco del server (que filtra lo oculto cuando está bloqueado)
+      if (!isSecretPinSet()) { try { const c = await AsyncStorage.getItem("threads"); if (c) setRows(JSON.parse(c).filter((t) => t.key && t.key !== "self")) } catch {} }
       load(false)
     })()
     const unsub = navigation.addListener("focus", () => load(false))
@@ -276,6 +335,11 @@ export default function Inbox({ navigation }) {
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 }}>
         <Text style={{ fontSize: 28, fontWeight: "800", color: theme.ink }}>{t("inbox")}</Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {!selMode ? (
+            <TouchableOpacity onPress={onSecretBtn} hitSlop={10} style={{ backgroundColor: secUnlocked ? theme.accent : theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+              <Text style={{ fontSize: 13.5, color: secUnlocked ? "#fff" : theme.accent, fontWeight: "700" }}>{secUnlocked ? t("secret_hide") : t("secret_pin")}</Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity onPress={() => selMode ? exitSel() : setSelMode(true)} hitSlop={10} style={{ flexDirection: "row", alignItems: "center", backgroundColor: selMode ? theme.accent : theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
             <Text style={{ fontSize: 13.5, color: selMode ? "#fff" : theme.accent, fontWeight: "700" }}>{selMode ? t("cancel") : t("select")}</Text>
           </TouchableOpacity>
@@ -339,6 +403,49 @@ export default function Inbox({ navigation }) {
           </TouchableOpacity>
         </View>
       ) : null}
+
+      {/* 🔒 GESTOR de cuentas ocultas: marcá qué número/correo esconder — toda su actividad se oculta sin el PIN */}
+      <Sheet visible={secManage} onClose={() => setSecManage(false)}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>🔒 {t("secret_accounts")}</Text>
+        <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 12, lineHeight: 17 }}>{t("secret_accounts_sub")}</Text>
+        <ScrollView style={{ maxHeight: 360 }}>
+          <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, letterSpacing: 0.4, marginBottom: 6 }}>{t("secret_wa")}</Text>
+          {secNums.length ? secNums.map((n) => {
+            const on = isNumSecret(n)
+            return (
+              <TouchableOpacity key={n} onPress={() => toggleNum(n)} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11 }}>
+                <Text style={{ fontSize: 18, color: on ? theme.accent : theme.muted2 }}>{on ? "☑" : "☐"}</Text>
+                <Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>WhatsApp +{n}</Text>
+              </TouchableOpacity>
+            )
+          }) : <Text style={{ color: theme.muted2, marginBottom: 4 }}>{t("secret_none")}</Text>}
+          <Text style={{ fontSize: 11, fontWeight: "800", color: theme.muted2, letterSpacing: 0.4, marginTop: 12, marginBottom: 6 }}>{t("secret_email")}</Text>
+          {secEmails.length ? secEmails.map((e) => {
+            const on = isAcctSecret("email", e.label)
+            return (
+              <TouchableOpacity key={e.label} onPress={() => toggleEmail(e.label)} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11 }}>
+                <Text style={{ fontSize: 18, color: on ? theme.accent : theme.muted2 }}>{on ? "☑" : "☐"}</Text>
+                <Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>{e.name || e.user}</Text>
+              </TouchableOpacity>
+            )
+          }) : <Text style={{ color: theme.muted2, marginBottom: 4 }}>{t("secret_none")}</Text>}
+        </ScrollView>
+        <TouchableOpacity onPress={() => { setSecManage(false); secretLock() }} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center", marginTop: 14 }}>
+          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>{t("secret_hide_now")}</Text>
+        </TouchableOpacity>
+      </Sheet>
+
+      {/* 🔒 prompt del 2º PIN (crear o ingresar). Nunca se persiste; el token queda solo en memoria de api.js */}
+      <Sheet visible={!!pinPrompt} onClose={() => closePin(null)}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>{pinPrompt ? pinPrompt.title : ""}</Text>
+        <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 12 }}>{pinPrompt ? pinPrompt.sub : ""}</Text>
+        <TextInput value={pinVal} onChangeText={setPinVal} secureTextEntry keyboardType="number-pad" maxLength={12} autoFocus autoCapitalize="none"
+          placeholder="••••••" placeholderTextColor={theme.muted2} returnKeyType="done" onSubmitEditing={() => closePin(pinVal.trim() || null)}
+          style={{ backgroundColor: theme.bg, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 13, fontSize: 20, letterSpacing: 5, textAlign: "center", color: theme.ink, marginBottom: 12 }} />
+        <TouchableOpacity onPress={() => closePin(pinVal.trim() || null)} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>{t("secret_continue")}</Text>
+        </TouchableOpacity>
+      </Sheet>
 
       {/* crear espacio: solo el nombre; las reglas se agregan adentro (⚙️) */}
       <Sheet visible={creating} onClose={() => setCreating(false)}>

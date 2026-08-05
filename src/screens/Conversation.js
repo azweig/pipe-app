@@ -406,7 +406,7 @@ export default function Conversation({ route, navigation }) {
     const showText = item.text && (!hasMedia || !PLACEHOLDER_RE.test(item.text))
     return (
       <Pressable onLongPress={() => openMenu(item)} delayLongPress={280} style={{ flexDirection: "row", justifyContent: out ? "flex-end" : "flex-start", paddingHorizontal: 10, marginVertical: 2 }}>
-        <View style={{ maxWidth: "84%", backgroundColor: out ? theme.bubbleOut : theme.bubbleIn, borderRadius: 15, paddingHorizontal: hasMedia ? 6 : 11, paddingVertical: hasMedia ? 6 : 7, borderWidth: out ? 0 : 0.5, borderColor: theme.line }}>
+        <View style={{ maxWidth: "84%", backgroundColor: item.secret ? (out ? theme.bubbleSecretOut : theme.bubbleSecretIn) : (out ? theme.bubbleOut : theme.bubbleIn), borderRadius: 15, paddingHorizontal: hasMedia ? 6 : 11, paddingVertical: hasMedia ? 6 : 7, borderWidth: out ? 0 : 0.5, borderColor: theme.line }}>
           {!out && isGroup && item.name ? <Text style={{ fontSize: 12, fontWeight: "700", color: color(item.name), marginBottom: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{item.name}</Text> : null}
           {hasMedia ? <MediaBubble item={item} out={out} /> : null}
           {item.covert ? (
