@@ -18,6 +18,8 @@ import { hhmm, color, preview } from "../util"
 import Avatar from "../components/Avatar"
 import MediaBubble from "../components/MediaBubble"
 import Sheet from "../components/Sheet"
+import { mergeItems } from "../mergeItems" // merge/dedup optimista PURO (extraído a su propio módulo → testeable sin mocks nativos)
+export { mergeItems }
 
 const PLACEHOLDER_RE = /^(🖼|📹|🎤|📄|🌟|📎|📍|👤|🖼️)/
 const durTxt = (s) => Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
@@ -85,15 +87,7 @@ export default function Conversation({ route, navigation }) {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
   const sync = useRef({ maxRev: 0, ready: false }) // estado de sincronización incremental por conversación
 
-  // merge de items nuevos/editados por id + dedup del envío optimista (el eco del server reemplaza la burbuja "opt-…")
-  const mergeItems = (cur, incoming) => {
-    const byId = new Map(cur.map((i) => [i.id, i]))
-    for (const it of incoming) {
-      byId.set(it.id, it)
-      if (it.dir === "out") for (const [id, o] of [...byId]) if (String(id).startsWith("opt-") && (o.text || "") === (it.text || "") && Math.abs((o.ts || 0) - (it.ts || 0)) < 120000) byId.delete(id)
-    }
-    return [...byId.values()].sort((a, b) => (a.ts || 0) - (b.ts || 0))
-  }
+  // merge/dedup optimista → ver mergeItems() a nivel de módulo (función pura, testeada en __tests__/mergeItems.test.js)
 
   const load = useCallback(async () => {
     try {

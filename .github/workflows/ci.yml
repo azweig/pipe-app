@@ -18,3 +18,10 @@ jobs:
       - run: npm ci
       # salud del proyecto Expo: SDK/deps compatibles, app.json válido, sin config rota
       - run: npx expo-doctor
+      # lint (no bloqueante por ahora: reporta problemas sin romper el build)
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+      # tests unitarios (lógica pura: helpers, merge/dedup, sesión secreta)
+      - name: Test
+        run: npm test

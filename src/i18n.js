@@ -12,6 +12,7 @@ export const DICT = {
     messages: "Mensajes", calendar: "Calendario", home: "Inicio", radar: "Radar", notes: "Notas",
     // comunes
     explore: "Explorar", settings: "Ajustes", search: "Buscar", cancel: "Cancelar", save: "Guardar", send: "Enviar", ok: "Listo", back: "Atrás", add: "Agregar", remove: "Quitar", done: "Hecho", loading: "Cargando…", retry: "Reintentar", logout: "Cerrar sesión",
+    err_title: "Algo salió mal", err_sub: "Ocurrió un error inesperado. Podés reintentar.",
     // login
     login_tagline: "Tu segundo cerebro. Entrá con tu PIN.", server: "Servidor", pin: "PIN", enter: "Entrar", login_error: "PIN incorrecto",
     // inbox
@@ -78,6 +79,7 @@ export const DICT = {
   en: {
     messages: "Messages", calendar: "Calendar", home: "Home", radar: "Radar", notes: "Notes",
     explore: "Explore", settings: "Settings", search: "Search", cancel: "Cancel", save: "Save", send: "Send", ok: "Done", back: "Back", add: "Add", remove: "Remove", done: "Done", loading: "Loading…", retry: "Retry", logout: "Log out",
+    err_title: "Something went wrong", err_sub: "An unexpected error occurred. You can try again.",
     login_tagline: "Your second brain. Enter with your PIN.", server: "Server", pin: "PIN", enter: "Enter", login_error: "Wrong PIN",
     inbox: "Inbox", search_placeholder: "Search by name, phone or email…", silenced: "Silenced", no_convs: "No conversations in this view.", nothing_matches: "Nothing matches your search.",
     select: "Select", merge_selected: "Merge ({n})", merged_n: "{n} contacts merged", merge_pick_2: "Pick 2 or more to merge", merge_keeps: "Keeps {name}", merging: "Merging…", merge_fail: "Couldn't merge — try again",

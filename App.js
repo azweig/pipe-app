@@ -26,6 +26,7 @@ import ContactProfile from "./src/screens/ContactProfile"
 import ShareTo from "./src/screens/ShareTo"
 import Settings from "./src/screens/Settings"
 import Alarms from "./src/screens/Alarms"
+import ErrorBoundary from "./src/components/ErrorBoundary"
 import { theme } from "./src/theme"
 
 const Stack = createNativeStackNavigator()
@@ -91,6 +92,7 @@ export default function App() {
   }, [])
   if (!ready) return <View style={{ flex: 1, justifyContent: "center", backgroundColor: theme.bg }}><ActivityIndicator color={theme.accent} /></View>
   return (
+    <ErrorBoundary>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
       <SafeAreaProvider>
@@ -115,5 +117,6 @@ export default function App() {
       </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
+    </ErrorBoundary>
   )
 }
