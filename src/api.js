@@ -187,6 +187,8 @@ export const getAccounts = () => api("/api/accounts")
 export const addEmail = (b) => api("/api/accounts/email", { method: "POST", body: JSON.stringify(b) })
 export const removeEmail = (label) => api("/api/accounts/email/remove", { method: "POST", body: JSON.stringify({ label }) })
 // ── Canales de mensajería (paridad con web/desktop) ──
+// catálogo del server (registro de conectores): la lista de canales YA NO se hardcodea en la app → { channels:[{id,label,brand,kind,connect:{method,net,provider,fields,multi},canSend}] }
+export const getChannelsCatalog = () => api("/api/channels/catalog")
 // estado AUTORITATIVO: whatsapp{bridge:[num],baileys:[{acc,num}]}, email, otros:[{name,key,ok}] (Telegram/Teams/Notion/Calendar)
 export const getStatus = () => api("/api/status")
 export const getWaStatus = () => api("/api/wa/status") // números de WA caídos → {loggedOut:[...]}

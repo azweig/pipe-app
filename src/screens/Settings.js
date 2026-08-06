@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar, Image } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa } from "../api"
+import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getChannelsCatalog, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -11,6 +11,22 @@ import WhatsAppImportCard from "../components/WhatsAppImport"
 const AI_PROV = [["openai", "OpenAI"], ["anthropic", "Anthropic (Claude)"], ["gemini", "Google Gemini"]]
 const PLABEL = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini", ollama: "Ollama (local)", gestionado: "GPU box (gestionado)" }
 const soundOn = () => true // el sonido vive en la web/app-shell; acá mostramos el toggle de notif-prefs
+// ── Catálogo de canales ──
+// FALLBACK: los MISMOS canales que estaban hardcodeados, ya en el shape del server (/api/channels/catalog) → si el fetch falla, la UI se porta idéntica.
+const FALLBACK_CHANNELS = [
+  { id: "whatsapp", label: "WhatsApp", brand: "#25D366", kind: "messaging", connect: { method: "matrix-bridge", net: "whatsapp", multi: true }, canSend: true },
+  { id: "instagram", label: "Instagram", brand: "#E1306C", kind: "messaging", connect: { method: "matrix-bridge", net: "instagram", multi: true }, canSend: true },
+  { id: "facebook", label: "Facebook", brand: "#1877F2", kind: "messaging", connect: { method: "matrix-bridge", net: "facebook", multi: true }, canSend: true },
+  { id: "linkedin", label: "LinkedIn", brand: "#0A66C2", kind: "messaging", connect: { method: "matrix-bridge", net: "linkedin", multi: true }, canSend: true },
+  { id: "telegram", label: "Telegram", brand: "#229ED9", kind: "messaging", connect: { method: "telegram-login" }, canSend: false },
+  { id: "discord", label: "Discord", brand: "#5865F2", kind: "messaging", connect: { method: "matrix-token", net: "discord", multi: true }, canSend: true },
+  { id: "slack", label: "Slack", brand: "#4A154B", kind: "messaging", connect: { method: "integration", provider: "slack" }, canSend: true },
+  { id: "signal", label: "Signal", brand: "#3A76F0", kind: "messaging", connect: { method: "integration", provider: "signal" }, canSend: true },
+]
+// íconos/emoji por-id (si el id no está acá → círculo con la inicial y color de marca del catálogo)
+const CH_ICON = { whatsapp: "📲", instagram: "📷", facebook: "🔵", linkedin: "🔗", telegram: "✈️", discord: "🎮", slack: "💼", signal: "🔒" }
+// instrucciones i18n opcionales al agregar cuenta (bridges que las tenían)
+const CH_INSTR = { instagram: "ch_ig_instr", facebook: "ch_fb_instr", linkedin: "ch_li_instr" }
 // GET devuelve {accounts,…}; POST puede devolver {accounts} o el array pelado — normalizamos siempre a {accounts:[…]}
 const normApify = (r) => !r ? null : (Array.isArray(r) ? { accounts: r } : (Array.isArray(r.accounts) ? r : null))
 
@@ -84,9 +100,10 @@ function BridgeLinkSheet({ visible, onClose, net, label, instr, toast }) {
     </View>
   </Sheet>
 }
-// Discord: vincula por TOKEN (su QR suele fallar) → matrixLinkToken + poll matrixStatus("discord")
-function DiscordLinkSheet({ visible, onClose, toast }) {
+// Vinculación por TOKEN (matrix-token; ej. Discord, cuyo QR suele fallar) → matrixLinkToken(net) + poll matrixStatus(net). net/label vienen del catálogo.
+function DiscordLinkSheet({ visible, onClose, net, label, toast }) {
   const t = useT()
+  const nm = net || "discord"; const title = label || "Discord"
   const [tok, setTok] = useState(""); const [msg, setMsg] = useState(null); const [showHint, setShowHint] = useState(false)
   const [started, setStarted] = useState(false); const [connected, setConnected] = useState(false)
   const closeRef = useRef(onClose); closeRef.current = onClose
@@ -95,30 +112,30 @@ function DiscordLinkSheet({ visible, onClose, toast }) {
     const v = tok.trim()
     if (!v) return setMsg({ text: t("ch_paste_token_first"), err: true })
     setMsg({ text: t("ch_linking"), err: false })
-    await matrixLinkToken("discord", v).catch(() => {})
+    await matrixLinkToken(nm, v).catch(() => {})
     setStarted(true)
   }
   useEffect(() => {
     if (!started || !visible) return
     let alive = true, tm
     const tick = async () => {
-      const r = await matrixStatus("discord").catch(() => null)
+      const r = await matrixStatus(nm).catch(() => null)
       if (!alive) return
-      if (r && r.connected) { setConnected(true); toast && toast("✓ Discord"); setTimeout(() => closeRef.current(), 1400); return }
+      if (r && r.connected) { setConnected(true); toast && toast("✓ " + title); setTimeout(() => closeRef.current(), 1400); return }
       if (alive) tm = setTimeout(tick, 3000)
     }
     tm = setTimeout(tick, 700)
     return () => { alive = false; clearTimeout(tm) }
-  }, [started, visible])
+  }, [started, visible, nm])
   return <Sheet visible={visible} onClose={onClose}>
-    <Text style={SHEET_TITLE}>Discord</Text>
+    <Text style={SHEET_TITLE}>{title}</Text>
     <Text style={{ color: theme.muted, marginBottom: 10, fontSize: 13, lineHeight: 18 }}>{t("ch_discord_sub")}</Text>
     <TouchableOpacity onPress={() => setShowHint((v) => !v)} hitSlop={6}><Text style={{ color: theme.accent, fontWeight: "600", fontSize: 13, marginBottom: 8 }}>{t("ch_discord_hint_title")}</Text></TouchableOpacity>
     {showHint ? <Text style={{ color: theme.muted, fontSize: 12.5, lineHeight: 19, marginBottom: 10 }}>{t("ch_discord_hint")}</Text> : null}
     <TextInput value={tok} onChangeText={(v) => { setTok(v); setMsg(null) }} placeholder={t("ch_discord_ph")} placeholderTextColor={theme.muted2} multiline autoCapitalize="none" autoCorrect={false} style={{ ...INP, minHeight: 60, textAlignVertical: "top" }} />
     <TouchableOpacity onPress={submit} style={{ ...PRIMARY, marginTop: 4 }}><Text style={{ color: "#fff", fontWeight: "700" }}>{t("ch_link_token")}</Text></TouchableOpacity>
     <View style={{ marginTop: 12, alignItems: "center", minHeight: 24 }}>
-      {connected ? <Text style={{ color: theme.ok, fontWeight: "800" }}>✓ Discord</Text> : (msg ? <Text style={{ fontSize: 13, color: msg.err ? theme.urgent : theme.muted }}>{msg.text}</Text> : null)}
+      {connected ? <Text style={{ color: theme.ok, fontWeight: "800" }}>✓ {title}</Text> : (msg ? <Text style={{ fontSize: 13, color: msg.err ? theme.urgent : theme.muted }}>{msg.text}</Text> : null)}
     </View>
   </Sheet>
 }
@@ -235,20 +252,35 @@ function ChannelsCard({ t }) {
   const [secret, setSecret] = useState({ numbers: [], accounts: [] })
   const [secShow, setSecShow] = useState(secretOn())
   const [open, setOpen] = useState(null) // { kind, net?, label?, instr? }
+  // la LISTA de canales viene del server (registro de conectores). Arranca con el fallback hardcodeado; si el catálogo carga bien, lo reemplaza.
+  const [channels, setChannels] = useState(FALLBACK_CHANNELS)
   const toast = (m) => Alert.alert(m)
+  const msgChannels = channels.filter((c) => c.kind === "messaging")
 
   const reload = useCallback(async () => {
     const [s, w, tgs, i] = await Promise.all([getStatus().catch(() => null), getWaStatus().catch(() => null), telegramStatus().catch(() => null), getIntegrations().catch(() => null)])
     if (s) setStatus(s); if (w) setWaDown(w.loggedOut || []); if (tgs) setTg(tgs); if (i) setInteg(i)
     if (secretOn()) { const ss = await getSecretState().catch(() => null); if (ss) setSecret({ numbers: ss.numbers || [], accounts: ss.accounts || [] }) }
   }, [])
+  // nets que tienen "cuentas conectadas" vía el bridge Matrix (todos los matrix-bridge/matrix-token menos WhatsApp, que sale de /api/status)
   const reloadLogins = useCallback(async () => {
-    for (const net of ["instagram", "facebook", "linkedin", "discord"]) {
+    const nets = channels.filter((c) => c.connect && (c.connect.method === "matrix-bridge" || c.connect.method === "matrix-token") && c.connect.net && c.connect.net !== "whatsapp").map((c) => c.connect.net)
+    for (const net of nets) {
       const r = await getMatrixLogins(net, true).catch(() => null)
       if (r) setLogins((p) => ({ ...p, [net]: r.accounts || [] }))
     }
+  }, [channels])
+  // al montar: traer el catálogo; si falla, se queda el FALLBACK. La UI es idéntica en ambos casos.
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const r = await getChannelsCatalog().catch(() => null)
+      if (alive && r && Array.isArray(r.channels) && r.channels.length) setChannels(r.channels)
+    })()
+    return () => { alive = false }
   }, [])
-  useEffect(() => { reload(); reloadLogins() }, [])
+  useEffect(() => { reload() }, [])
+  useEffect(() => { reloadLogins() }, [channels]) // re-consulta logins cuando cambia la lista (fallback → catálogo)
   // al des/bloquear el 2º PIN: re-pedir estado (con el token aparecen/desaparecen las cuentas secretas)
   useEffect(() => onSecretChange(() => { setSecShow(secretOn()); reload() }), [])
   const closeSheet = () => { setOpen(null); reload(); reloadLogins() }
@@ -279,9 +311,9 @@ function ChannelsCard({ t }) {
   const acctSub = (accts) => accts.length ? okText(accts.length + " " + (accts.length > 1 ? t("ch_connected_pl") : t("ch_connected_sg"))) : mutedText(t("ch_no_accounts"))
   const linkBtn = (label, onPress) => <TouchableOpacity onPress={onPress} hitSlop={8}><Text style={{ color: theme.accent, fontWeight: "700", fontSize: 12.5 }}>{label}</Text></TouchableOpacity>
   const delBtn = (onPress) => <TouchableOpacity onPress={onPress} hitSlop={8}><Text style={{ color: theme.urgent, fontWeight: "700", fontSize: 12.5 }}>{t("ch_disconnect")}</Text></TouchableOpacity>
-  const chRow = (key, icon, name, subNode, action) => (
+  const chRow = (key, iconNode, name, subNode, action) => (
     <Row key={key}>
-      <Text style={{ fontSize: 18 }}>{icon}</Text>
+      <View style={{ width: 24, alignItems: "center" }}>{iconNode}</View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 14.5, color: theme.ink, fontWeight: "600" }}>{name}</Text>
         {subNode}
@@ -289,6 +321,15 @@ function ChannelsCard({ t }) {
       {action}
     </Row>
   )
+  // ícono por-id (emoji del mapa) o, si no está, círculo con la inicial y el color de marca del catálogo
+  const iconFor = (ch) => {
+    const e = CH_ICON[ch.id]
+    if (e) return <Text style={{ fontSize: 18 }}>{e}</Text>
+    const init = String(ch.label || ch.id || "?").slice(0, 1).toUpperCase()
+    return <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: ch.brand || theme.muted2, alignItems: "center", justifyContent: "center" }}>
+      <Text style={{ fontSize: 11, fontWeight: "800", color: "#fff" }}>{init}</Text>
+    </View>
+  }
   const acctRows = (accts) => (accts || []).map((a) => (
     <View key={a} style={{ flexDirection: "row", alignItems: "center", paddingRight: 14, paddingLeft: 44, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: theme.line }}>
       <Text style={{ flex: 1, fontSize: 13, color: theme.ink, fontWeight: "500" }}>{isAcctSecret(a) ? "🔒 " : ""}{fmtAcct(a)}</Text>
@@ -301,27 +342,51 @@ function ChannelsCard({ t }) {
     {waDown.length ? <Text style={{ color: theme.urgent }}>{"  ·  ⚠️ " + t("ch_revincula") + " " + waDown.map(fmtAcct).join(", ")}</Text> : null}
   </Text>
 
+  // Una fila (o fila + sus cuentas) por canal del catálogo, elegida por connect.method. Conserva EXACTAMENTE el comportamiento previo.
+  const renderChannel = (ch) => {
+    const id = ch.id, label = ch.label || id, c = ch.connect || {}, icon = iconFor(ch)
+    // WhatsApp: sus cuentas salen de /api/status (bridge+baileys), con aviso de re-vinculación (waSub)
+    if (id === "whatsapp") return (
+      <React.Fragment key={id}>
+        {chRow(id, icon, label, sub(waSub), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net: c.net || "whatsapp", label })))}
+        {acctRows(waAccounts)}
+      </React.Fragment>
+    )
+    if (c.method === "matrix-bridge") {
+      const net = c.net, accts = logins[net] || [], ik = CH_INSTR[id]
+      return <React.Fragment key={id}>
+        {chRow(id, icon, label, acctSub(accts), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net, label, instr: ik ? t(ik) : undefined })))}
+        {acctRows(accts)}
+      </React.Fragment>
+    }
+    if (c.method === "matrix-token") {
+      const net = c.net, accts = logins[net] || []
+      return <React.Fragment key={id}>
+        {chRow(id, icon, label, acctSub(accts), linkBtn(t("ch_add_account"), () => setOpen({ kind: "token", net, label })))}
+        {acctRows(accts)}
+      </React.Fragment>
+    }
+    if (c.method === "telegram-login") return chRow(id, icon, label,
+      <Text style={{ fontSize: 12, color: tgOn ? theme.ok : theme.muted2 }}>{tgOn ? t("ch_connected") + " ✓ · " + t("ch_read_only") : t("ch_tg_short")}</Text>,
+      tgOn ? <Text style={{ color: theme.ok, fontSize: 15, fontWeight: "800" }}>✓</Text> : linkBtn(t("ch_connect"), () => setOpen({ kind: "telegram" })))
+    if (c.method === "integration" && c.provider === "slack") return chRow(id, icon, label,
+      <Text style={{ fontSize: 12, color: slackOn ? theme.ok : theme.muted2 }}>{slackOn ? t("ch_connected") + " ✓" + (integ && integ.slack && integ.slack.team ? " · " + integ.slack.team : "") : t("ch_slack_sub")}</Text>,
+      slackOn ? delBtn(() => confirmDisconnect("ch_slack_confirm", removeSlack)) : linkBtn(t("ch_connect"), () => setOpen({ kind: "slack" })))
+    if (c.method === "integration" && c.provider === "signal") return chRow(id, icon, label,
+      <Text style={{ fontSize: 12, color: signalOn ? theme.ok : theme.muted2 }}>{signalOn ? t("ch_connected") + " ✓" + (integ && integ.signal && integ.signal.number ? " · " + integ.signal.number : "") : t("ch_signal_sub")}</Text>,
+      signalOn ? delBtn(() => confirmDisconnect("ch_signal_confirm", removeSignal)) : linkBtn(t("ch_connect"), () => setOpen({ kind: "signal" })))
+    return null
+  }
+
   return <>
     <Card title={"📨 " + t("ch_title")}>
-      {chRow("wa", "📲", "WhatsApp", sub(waSub), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net: "whatsapp", label: "WhatsApp" })))}
-      {acctRows(waAccounts)}
-      {chRow("ig", "📷", "Instagram", acctSub(logins.instagram || []), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net: "instagram", label: "Instagram", instr: t("ch_ig_instr") })))}
-      {acctRows(logins.instagram || [])}
-      {chRow("fb", "🔵", "Facebook", acctSub(logins.facebook || []), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net: "facebook", label: "Facebook", instr: t("ch_fb_instr") })))}
-      {acctRows(logins.facebook || [])}
-      {chRow("li", "🔗", "LinkedIn", acctSub(logins.linkedin || []), linkBtn(t("ch_add_account"), () => setOpen({ kind: "bridge", net: "linkedin", label: "LinkedIn", instr: t("ch_li_instr") })))}
-      {acctRows(logins.linkedin || [])}
-      {chRow("tg", "✈️", "Telegram", <Text style={{ fontSize: 12, color: tgOn ? theme.ok : theme.muted2 }}>{tgOn ? t("ch_connected") + " ✓ · " + t("ch_read_only") : t("ch_tg_short")}</Text>, tgOn ? <Text style={{ color: theme.ok, fontSize: 15, fontWeight: "800" }}>✓</Text> : linkBtn(t("ch_connect"), () => setOpen({ kind: "telegram" })))}
-      {chRow("discord", "🎮", "Discord", acctSub(logins.discord || []), linkBtn(t("ch_add_account"), () => setOpen({ kind: "discord" })))}
-      {acctRows(logins.discord || [])}
-      {chRow("slack", "💼", "Slack", <Text style={{ fontSize: 12, color: slackOn ? theme.ok : theme.muted2 }}>{slackOn ? t("ch_connected") + " ✓" + (integ && integ.slack && integ.slack.team ? " · " + integ.slack.team : "") : t("ch_slack_sub")}</Text>, slackOn ? delBtn(() => confirmDisconnect("ch_slack_confirm", removeSlack)) : linkBtn(t("ch_connect"), () => setOpen({ kind: "slack" })))}
-      {chRow("signal", "🔒", "Signal", <Text style={{ fontSize: 12, color: signalOn ? theme.ok : theme.muted2 }}>{signalOn ? t("ch_connected") + " ✓" + (integ && integ.signal && integ.signal.number ? " · " + integ.signal.number : "") : t("ch_signal_sub")}</Text>, signalOn ? delBtn(() => confirmDisconnect("ch_signal_confirm", removeSignal)) : linkBtn(t("ch_connect"), () => setOpen({ kind: "signal" })))}
+      {msgChannels.map(renderChannel)}
       <View style={{ paddingHorizontal: 14, paddingVertical: 12 }}>
         <Text style={{ fontSize: 11.5, color: theme.muted, lineHeight: 16 }}>{t("ch_server_note")}</Text>
       </View>
     </Card>
     <BridgeLinkSheet visible={!!open && open.kind === "bridge"} onClose={closeSheet} net={open && open.net} label={(open && open.label) || ""} instr={open && open.instr} toast={toast} />
-    <DiscordLinkSheet visible={!!open && open.kind === "discord"} onClose={closeSheet} toast={toast} />
+    <DiscordLinkSheet visible={!!open && open.kind === "token"} onClose={closeSheet} net={open && open.net} label={(open && open.label) || ""} toast={toast} />
     <TelegramLinkSheet visible={!!open && open.kind === "telegram"} onClose={closeSheet} configured={!!(tg && tg.configured)} toast={toast} />
     <SlackSheet visible={!!open && open.kind === "slack"} onClose={closeSheet} onSaved={reload} />
     <SignalSheet visible={!!open && open.kind === "signal"} onClose={closeSheet} onSaved={reload} />
