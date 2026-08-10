@@ -1,5 +1,5 @@
 // Helpers de presentación puros (sin deps nativas): iniciales, color estable, hora, preview, iconos, bucket.
-import { initials, color, ago, hhmm, espIcon, bucketCat, preview } from "../src/util"
+import { initials, color, ago, hhmm, espIcon, bucketCat, preview, htmlToText } from "../src/util"
 
 describe("initials", () => {
   it("toma la inicial del nombre y apellido", () => {
@@ -93,5 +93,25 @@ describe("preview", () => {
   })
   it("sin texto ni media → cadena vacía", () => {
     expect(preview({})).toBe("")
+  })
+})
+
+describe("htmlToText", () => {
+  it("saca las etiquetas y deja el texto", () => {
+    expect(htmlToText("<p>Hola <b>Eva</b></p>")).toBe("Hola Eva")
+  })
+  it("descarta scripts y estilos enteros", () => {
+    expect(htmlToText("<style>a{color:red}</style><script>alert(1)</script><p>ok</p>")).toBe("ok")
+  })
+  it("los bloques y <br> pasan a saltos de línea", () => {
+    expect(htmlToText("<div>uno</div><div>dos</div>")).toBe("uno\ndos")
+    expect(htmlToText("uno<br>dos")).toBe("uno\ndos")
+  })
+  it("decodifica entidades comunes", () => {
+    expect(htmlToText("<p>Pago &amp; env&#237;o &quot;ya&quot;</p>")).toBe('Pago & envío "ya"')
+  })
+  it("vacío o nulo → cadena vacía", () => {
+    expect(htmlToText("")).toBe("")
+    expect(htmlToText(null)).toBe("")
   })
 })

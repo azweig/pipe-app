@@ -12,9 +12,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThread, getThreadDelta, getThreadBefore, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, sendStickerFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg } from "../api"
+import { getThread, getThreadDelta, getThreadBefore, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, sendStickerFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg, getEmailBody } from "../api"
 import { loadThread, saveThread } from "../store" // cache local (SQLite): historia completa en el celular, de la red solo el delta
-import { hhmm, color, preview } from "../util"
+import { hhmm, color, preview, htmlToText } from "../util"
 import Avatar from "../components/Avatar"
 import MediaBubble from "../components/MediaBubble"
 import Sheet from "../components/Sheet"
@@ -32,6 +32,32 @@ function LinkedText({ text, style }) {
         ? <Text key={i} style={{ color: theme.accent, textDecorationLine: "underline" }} onPress={() => Linking.openURL(p).catch(() => {})}>{p}</Text>
         : p)}
     </Text>
+  )
+}
+
+// ✉️ TARJETA DE EMAIL (o 🎙 transcripción) — tocá para abrir el contenido completo. Igual que en web y desktop.
+function EmailCard({ item, onOpen }) {
+  const mtg = item.channel === "meeting"
+  const subject = String(item.text || "").split(" — ")[0] || "(sin asunto)"
+  const prev = String(item.text || "").slice(subject.length + 3).trim()
+  let atts = []; try { atts = JSON.parse(item.attachments || "[]") || [] } catch {}
+  return (
+    <Pressable onPress={onOpen} style={{ marginHorizontal: 10, marginVertical: 4, backgroundColor: theme.card, borderRadius: 15, borderWidth: 0.5, borderColor: theme.line, padding: 13 }}>
+      <Text style={{ fontSize: 11.5, fontWeight: "700", color: theme.accent, marginBottom: 4 }}>
+        {mtg ? "🎙 Reunión" : `✉️ ${item.dir === "out" ? "Enviado a" : "Email de"} ${item.name || ""}`}
+      </Text>
+      <Text numberOfLines={2} style={{ fontSize: 15, fontWeight: "700", color: theme.ink, marginBottom: 3 }}>{subject.replace(/^📅\s*/, "")}</Text>
+      {item.summary
+        ? <Text numberOfLines={4} style={{ fontSize: 13, color: theme.ink, lineHeight: 19 }}>✦ {item.summary}</Text>
+        : prev ? <Text numberOfLines={3} style={{ fontSize: 13, color: theme.muted, lineHeight: 19 }}>{prev}</Text>
+        : item.hasBody ? <Text style={{ fontSize: 13, color: theme.muted }}>📄 Contenido en imágenes/HTML — abrilo para verlo</Text> : null}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 9 }}>
+        <Text style={{ fontSize: 12.5, color: theme.accent, fontWeight: "600" }}>
+          {atts.length ? `📎 ${atts.length} · ` : ""}{mtg ? "Ver transcripción →" : "📖 Abrir email completo →"}
+        </Text>
+        <Text style={{ fontSize: 10, color: theme.muted2 }}>{hhmm(item.ts)}</Text>
+      </View>
+    </Pressable>
   )
 }
 
@@ -66,6 +92,7 @@ export default function Conversation({ route, navigation }) {
   const [opts, setOpts] = useState(null) // { corrected, original, alternative }
   const [correctOn, setCorrectOn] = useState(true) // #2: corrección IA al enviar ON por defecto; se puede apagar (botón ✨) y se recuerda
   const [summary, setSummary] = useState(null)
+  const [email, setEmail] = useState(null) // ✉️ email/transcripción abierto: { item, loading, text, atts }
   const [busy, setBusy] = useState(null) // texto de "cargando"
   const [rec, setRec] = useState(null) // 'voice' | 'ai'
   const [recDur, setRecDur] = useState(0)
@@ -394,7 +421,17 @@ export default function Conversation({ route, navigation }) {
   }
   const startReply = (item) => { setReplyTo({ name: item.dir === "out" ? "Vos" : (item.name || "Mensaje"), text: preview(item).slice(0, 160) }); setSheet(null) }
 
+  // ✉️ abre el email (o la transcripción de una reunión) COMPLETO — paridad con web y desktop
+  async function openEmail(item) {
+    let atts = []; try { atts = JSON.parse(item.attachments || "[]") || [] } catch {}
+    setEmail({ item, atts, loading: !!item.hasBody, text: htmlToText(item.full || item.text || "") })
+    if (!item.hasBody) return
+    const r = await getEmailBody(item.id).catch(() => null)
+    setEmail((e) => (e && e.item.id === item.id ? { ...e, loading: false, text: r && r.body ? htmlToText(r.body) : e.text } : e))
+  }
+
   const renderItem = ({ item }) => {
+    if (item.channel === "email" || item.channel === "meeting") return <EmailCard item={item} onOpen={() => openEmail(item)} />
     const out = item.dir === "out"
     const hasMedia = !!item.media
     const showText = item.text && (!hasMedia || !PLACEHOLDER_RE.test(item.text))
@@ -613,6 +650,29 @@ export default function Conversation({ route, navigation }) {
             </TouchableOpacity>
           ))
         })() : null}
+      </Sheet>
+
+      {/* ✉️ email / 🎙 transcripción completa. Sin WebView: el HTML se pasa a texto legible (los links quedan tocables). */}
+      <Sheet visible={!!email} onClose={() => setEmail(null)}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 2 }}>{email && email.item.channel === "meeting" ? "🎙 Reunión" : "📧 Email"}</Text>
+        <Text style={{ color: theme.muted, marginBottom: 12 }} numberOfLines={2}>
+          {email ? String(email.item.text || "").split(" — ")[0].replace(/^📅\s*/, "") : ""}{email && email.item.name ? " · " + email.item.name : ""}
+        </Text>
+        {email && email.atts.length ? (
+          <View style={{ marginBottom: 12 }}>
+            {email.atts.map((a, i) => (
+              <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6 }}>
+                <Text style={{ fontSize: 18 }}>📄</Text>
+                <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, color: theme.ink }}>{a.name || "archivo"}</Text>
+                <Text style={{ fontSize: 11, color: theme.muted2 }}>{a.size ? Math.max(1, Math.round(a.size / 1024)) + " KB" : ""}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {email && email.loading ? <ActivityIndicator color={theme.accent} style={{ marginVertical: 24 }} /> : null}
+        <ScrollView style={{ maxHeight: 420 }}>
+          <LinkedText text={email ? email.text || "(sin contenido)" : ""} style={{ fontSize: 15, color: theme.ink, lineHeight: 22 }} />
+        </ScrollView>
       </Sheet>
 
       <Sheet visible={sheet === "summary"} onClose={() => setSheet(null)}>

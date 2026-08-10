@@ -33,6 +33,23 @@ export function espIcon(icon) {
 export function bucketCat(t) {
   return t.espacio ? "todo" : t.bucket === "spam" ? "spam" : t.group ? "grupos" : t.bucket === "family" ? "familia" : t.bucket === "amigos" ? "amigos" : "trabajo"
 }
+// HTML de un email → texto legible. Sin WebView: sacamos scripts/estilos, los bloques pasan a saltos de línea,
+// y decodificamos las entidades más comunes. Suficiente para LEER el correo completo en el celular.
+export function htmlToText(html) {
+  return String(html || "")
+    .replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|li|h[1-6]|table)>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&mdash;/gi, "—").replace(/&ndash;/gi, "–")
+    .replace(/&#(\d+);/g, (_, d) => { try { return String.fromCharCode(+d) } catch { return "" } })
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
 // preview de un mensaje (texto o placeholder de media)
 export function preview(it) {
   if (it.text) return String(it.text).replace(/\s+/g, " ")

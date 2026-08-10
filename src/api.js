@@ -121,6 +121,8 @@ export const getThread = (key) => api("/api/thread?key=" + encodeURIComponent(ke
 export const getThreadDelta = (key, sinceRev = 0) => api("/api/thread/delta?key=" + encodeURIComponent(key) + "&sinceRev=" + (sinceRev || 0))
 // mensajes MÁS ANTIGUOS (paginación hacia atrás): los previos a `before` (un ts). MISMO endpoint que web (loadOlder) y desktop (getThreadBefore).
 export const getThreadBefore = (key, before) => api("/api/thread?key=" + encodeURIComponent(key) + "&before=" + (before || 0) + "&limit=60")
+// CUERPO COMPLETO de un email/transcripción → { body } (HTML crudo). MISMO endpoint que web y desktop.
+export const getEmailBody = (id) => api("/api/email/body?id=" + encodeURIComponent(id))
 // buscador CONTEXTUAL / con IA: router de facetas (⚡ 0 tokens) con fallback RAG (🧠). Busca dentro del CUERPO de los mensajes, no solo por nombre.
 // → { mode:"facets"|"rag", type:"find"|…, engine, answer, results:[{key,name,ts,text,media,mediaType,filename}], threads:[{key,name,summary,path}], matches, ragMode, degraded }
 export const searchContent = (q) => api("/api/router-search", { method: "POST", body: JSON.stringify({ q }) })
