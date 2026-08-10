@@ -40,7 +40,7 @@ function EmailCard({ item, onOpen }) {
   const mtg = item.channel === "meeting"
   const subject = String(item.text || "").split(" — ")[0] || "(sin asunto)"
   const prev = String(item.text || "").slice(subject.length + 3).trim()
-  let atts = []; try { atts = JSON.parse(item.attachments || "[]") || [] } catch {}
+  let atts = []; try { atts = (JSON.parse(item.attachments || "[]") || []).filter((a) => !a.inline) } catch {}
   return (
     <Pressable onPress={onOpen} style={{ marginHorizontal: 10, marginVertical: 4, backgroundColor: theme.card, borderRadius: 15, borderWidth: 0.5, borderColor: theme.line, padding: 13 }}>
       <Text style={{ fontSize: 11.5, fontWeight: "700", color: theme.accent, marginBottom: 4 }}>
@@ -97,6 +97,7 @@ export default function Conversation({ route, navigation }) {
   const [rec, setRec] = useState(null) // 'voice' | 'ai'
   const [recDur, setRecDur] = useState(0)
   const listRef = useRef(null)
+  const inputRef = useRef(null) // enfocar el compositor al tocar "Responder" en el visor de email
   const prependingRef = useRef(false) // true mientras prependemos mensajes viejos → NO auto-scrollear al fondo
   const hintTimer = useRef(null)
   const recStart = useRef(0), recTimer = useRef(null)
@@ -421,9 +422,18 @@ export default function Conversation({ route, navigation }) {
   }
   const startReply = (item) => { setReplyTo({ name: item.dir === "out" ? "Vos" : (item.name || "Mensaje"), text: preview(item).slice(0, 160) }); setSheet(null) }
 
+  // responder ESE correo desde el visor: apunta el compositor al canal email y (opcional) pide el borrador a la IA
+  async function replyToEmail(withAi) {
+    const em = (targets || []).find((t) => t.channel === "email")
+    if (em) setTarget(em)
+    setEmail(null)
+    if (withAi) return aiSuggest()
+    setTimeout(() => inputRef.current && inputRef.current.focus(), 120)
+  }
+
   // ✉️ abre el email (o la transcripción de una reunión) COMPLETO — paridad con web y desktop
   async function openEmail(item) {
-    let atts = []; try { atts = JSON.parse(item.attachments || "[]") || [] } catch {}
+    let atts = []; try { atts = (JSON.parse(item.attachments || "[]") || []).filter((a) => !a.inline) } catch {}
     setEmail({ item, atts, loading: !!item.hasBody, text: htmlToText(item.full || item.text || "") })
     if (!item.hasBody) return
     const r = await getEmailBody(item.id).catch(() => null)
@@ -509,7 +519,7 @@ export default function Conversation({ route, navigation }) {
         <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6, padding: 8, paddingBottom: (insets.bottom || 8) + 4, backgroundColor: theme.card, borderTopWidth: 0.5, borderTopColor: theme.line }}>
           <TouchableOpacity onPress={() => setSheet("ai")} onLongPress={() => showHint("IA: sugerir respuesta o resumir el chat")} accessibilityLabel="Asistente de IA" style={round(theme.bg, theme.accent)}><Text style={{ color: theme.accent, fontWeight: "800", fontSize: 14 }}>Ai</Text></TouchableOpacity>
           {multiTarget ? <TouchableOpacity onPress={() => setSheet("target")} style={round("#fff", theme.line)}><Text style={{ fontSize: 16 }}>{chanIcon}▾</Text></TouchableOpacity> : null}
-          <TextInput value={text} onChangeText={setText} placeholder={covertOn ? "🕊️ Mensaje encubierto…" : (target && target.channel === "email" ? "Email…" : t("message_ph"))} placeholderTextColor={theme.muted2} multiline
+          <TextInput ref={inputRef} value={text} onChangeText={setText} placeholder={covertOn ? "🕊️ Mensaje encubierto…" : (target && target.channel === "email" ? "Email…" : t("message_ph"))} placeholderTextColor={theme.muted2} multiline
             style={{ flex: 1, minHeight: 40, backgroundColor: "#fff", borderWidth: 1, borderColor: theme.line, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, fontSize: 15.5, maxHeight: 120, color: theme.ink }} />
           {text.trim() ? (
             <>
@@ -658,6 +668,16 @@ export default function Conversation({ route, navigation }) {
         <Text style={{ color: theme.muted, marginBottom: 12 }} numberOfLines={2}>
           {email ? String(email.item.text || "").split(" — ")[0].replace(/^📅\s*/, "") : ""}{email && email.item.name ? " · " + email.item.name : ""}
         </Text>
+        {email && email.item.channel !== "meeting" ? (
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+            <TouchableOpacity onPress={() => replyToEmail(false)} style={{ flex: 1, paddingVertical: 11, borderRadius: 12, backgroundColor: theme.accent, alignItems: "center" }}>
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>✍️ Responder</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => replyToEmail(true)} style={{ flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: theme.accent, alignItems: "center" }}>
+              <Text style={{ color: theme.accent, fontWeight: "700", fontSize: 14 }}>✨ Responder con IA</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
         {email && email.atts.length ? (
           <View style={{ marginBottom: 12 }}>
             {email.atts.map((a, i) => (
