@@ -115,7 +115,9 @@ export const importWhatsApp = (fileUri, { name = "", order = "auto", tz = 0, gro
 export const importWhatsAppZip = (fileUri, { name = "", order = "auto", tz = 0, group = false } = {}) =>
   uploadRaw(`/api/import/whatsapp-zip?name=${encodeURIComponent(name)}&order=${order}&tz=${tz}&group=${group ? "1" : ""}`, fileUri, "application/zip")
 
-export const getThreads = () => api("/api/threads?limit=200")
+export const getThreads = () => api("/api/threads?limit=600") // 600 como la web: con 200, los contactos de hace dos semanas caían fuera de la bandeja
+// BUSCAR entre TODOS los hilos (no solo los cargados): el server resuelve por índice y devuelve filas iguales a las de la bandeja
+export const searchThreads = (q) => api("/api/threads?limit=60&q=" + encodeURIComponent(q))
 export const getThread = (key) => api("/api/thread?key=" + encodeURIComponent(key) + "&limit=60")
 // SYNC edit-aware: solo los mensajes NUEVOS o editados (rev > sinceRev) → el resto ya está cacheado en el celular
 export const getThreadDelta = (key, sinceRev = 0) => api("/api/thread/delta?key=" + encodeURIComponent(key) + "&sinceRev=" + (sinceRev || 0))

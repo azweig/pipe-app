@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent, mergeContacts, getAccounts,
+import { getThreads, searchThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent, mergeContacts, getAccounts,
   secretOn, isSecretPinSet, onSecretChange, secretLock, getSecretStatus, secretSetup, secretUnlock, getSecretState, secretSetWa, secretSetAccount } from "../api"
 import { ago, preview, espIcon, bucketCat } from "../util"
 // (ago se usa también en las tarjetas de resultados de la búsqueda contextual)
@@ -166,6 +166,17 @@ export default function Inbox({ navigation }) {
     ...(silN ? [{ id: "_sil", name: `🔕 Silenciados (${silN})` }] : []),
   ]), [groups, silN])
 
+  // La bandeja trae los hilos más recientes. Con miles de conversaciones, filtrar SOLO lo cargado deja afuera a
+  // cualquiera con quien no hablaste últimamente y parece que no existe. El server busca sobre TODOS (clave + nombre por índice).
+  const [remoteHits, setRemoteHits] = useState([])
+  useEffect(() => {
+    const nq = q.trim()
+    if (nq.length < 2) { setRemoteHits([]); return }
+    let alive = true
+    const id = setTimeout(() => { searchThreads(nq).then((r) => { if (alive && Array.isArray(r)) setRemoteHits(r) }).catch(() => {}) }, 220)
+    return () => { alive = false; clearTimeout(id) }
+  }, [q])
+
   const shown = useMemo(() => {
     const nq = q.trim().toLowerCase(), ndig = nq.replace(/\D/g, "")
     const matchQ = (t) => {
@@ -180,9 +191,12 @@ export default function Inbox({ navigation }) {
       if (t.silenced) return false
       return tab === "todo" ? true : bucketCat(t) === tab
     })
-    if (nq) return out
+    if (nq) { // + lo que encontró el server y no está cargado (ya matcheó allá: no se re-filtra)
+      const known = new Set(out.map((t) => t.key))
+      return out.concat(remoteHits.filter((t) => !known.has(t.key) && bucketCat(t) !== "spam"))
+    }
     return out.slice().sort((a, b) => (b.escalated ? 1 : 0) - (a.escalated ? 1 : 0)) // el piloto escaló → arriba de todo
-  }, [rows, q, tab])
+  }, [rows, q, tab, remoteHits])
 
   // claves seleccionadas EN ORDEN DE LISTA → target = la 1ra (se conserva), el resto se absorbe. Solo hilos reales (con key, no espacios).
   const selKeys = useMemo(() => shown.filter((t) => t.key && !t.espacio && selected.has(t.key)).map((t) => t.key), [shown, selected])
