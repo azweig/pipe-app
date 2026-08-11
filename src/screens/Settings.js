@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar, Image } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getChannelsCatalog, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa, getSignatures, saveSignature } from "../api"
+import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getChannelsCatalog, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa, getSignatures, saveSignature, getAssistant, setAssistant, tryAssistant } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -442,6 +442,44 @@ function SignatureRows({ accounts }) {
   )
 }
 
+// 🤖 ASISTENTE EN TU PROPIO CHAT: le preguntás algo a tu propio WhatsApp y te contesta (busca en internet y en tu
+// historial). NO es el piloto: el piloto se hace pasar por vos con otros; esto te habla a vos. Las notas no se tocan.
+function AssistantCard({ t }) {
+  const [a, setA] = useState(null)
+  const [q, setQ] = useState("")
+  const [out, setOut] = useState(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { getAssistant().then((r) => setA(r || {})).catch(() => setA({})) }, [])
+  if (!a) return null
+  const upd = async (b) => { await setAssistant(b).catch(() => {}); setA(await getAssistant().catch(() => a)) }
+  const probar = async () => { if (!q.trim()) return; setBusy(true); setOut(null); const r = await tryAssistant(q).catch(() => null); setBusy(false); setOut(r) }
+  return (
+    <Card title="🤖 Asistente en tu chat">
+      <Text style={{ fontSize: 12.5, color: theme.muted, paddingHorizontal: 2, paddingBottom: 10, lineHeight: 18 }}>
+        Le escribís a tu propio WhatsApp y, si es una pregunta, te responde. Tus notas y links los deja pasar. Para forzarlo, empezá con “pipe”.
+      </Text>
+      <Row>
+        <Text style={{ fontSize: 18 }}>💬</Text>
+        <View style={{ flex: 1 }}><Text style={{ fontSize: 15, color: theme.ink, fontWeight: "500" }}>Responderme cuando pregunte</Text>
+          <Text style={{ fontSize: 12, color: theme.muted2 }}>Hoy: {(a.state && a.state.usedToday) || 0} de {a.maxPerDay || 30}</Text></View>
+        <Switch value={!!a.enabled} onValueChange={(v) => upd({ enabled: v })} />
+      </Row>
+      <Row>
+        <Text style={{ fontSize: 18 }}>🌐</Text>
+        <View style={{ flex: 1 }}><Text style={{ fontSize: 15, color: theme.ink, fontWeight: "500" }}>Puede buscar en internet</Text></View>
+        <Switch value={!!a.web} onValueChange={(v) => upd({ web: v })} />
+      </Row>
+      <View style={{ flexDirection: "row", gap: 8, paddingVertical: 10 }}>
+        <TextInput value={q} onChangeText={setQ} placeholder="Probalo: ¿a cuánto está el dólar?" placeholderTextColor={theme.muted2}
+          style={{ flex: 1, borderWidth: 1, borderColor: theme.line, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 9, fontSize: 14, color: theme.ink }} />
+        <TouchableOpacity onPress={probar} disabled={busy} style={{ paddingHorizontal: 16, justifyContent: "center", borderRadius: 12, backgroundColor: theme.accent }}>
+          <Text style={{ color: "#fff", fontWeight: "700" }}>{busy ? "…" : "Probar"}</Text></TouchableOpacity>
+      </View>
+      {out ? <Text style={{ fontSize: 13.5, color: theme.ink, lineHeight: 20, paddingBottom: 10 }}>{out.text || "No pude responder."}</Text> : null}
+    </Card>
+  )
+}
+
 export default function Settings({ navigation }) {
   const insets = useSafeAreaInsets()
   const t = useT()
@@ -590,6 +628,8 @@ export default function Settings({ navigation }) {
           <Row onPress={() => setSheet("addEmail")}><Text style={{ fontSize: 18 }}>➕</Text><Text style={{ fontSize: 15, color: theme.accent, fontWeight: "600" }}>{t("add_email")}</Text></Row>
           <SignatureRows accounts={accts.email || []} />
         </Card>
+
+        <AssistantCard t={t} />
 
         <ChannelsCard t={t} />
 

@@ -119,6 +119,10 @@ export const getThreads = () => api("/api/threads?limit=600") // 600 como la web
 // BUSCAR entre TODOS los hilos (no solo los cargados): el server resuelve por índice y devuelve filas iguales a las de la bandeja
 export const searchThreads = (q) => api("/api/threads?limit=60&q=" + encodeURIComponent(q))
 // ✍️ firmas de correo, por cuenta ("*" = la de por defecto)
+// 🤖 asistente en TU propio chat (te habla A VOS; distinto del piloto, que se hace pasar por vos)
+export const getAssistant = () => api("/api/assistant")
+export const setAssistant = (b) => api("/api/assistant", { method: "POST", body: JSON.stringify(b) })
+export const tryAssistant = (q) => api("/api/assistant/try", { method: "POST", body: JSON.stringify({ q }) })
 export const getSignatures = () => api("/api/signatures")
 export const saveSignature = (account, text) => api("/api/signature", { method: "POST", body: JSON.stringify({ account, text }) })
 export const getThread = (key) => api("/api/thread?key=" + encodeURIComponent(key) + "&limit=60")
