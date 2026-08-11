@@ -107,7 +107,7 @@ export default function Inbox({ navigation }) {
   // al des/bloquear (por botón, out-of-focus o inactividad) re-fetch: los hilos secretos aparecen/desaparecen sin sacarte de la vista.
   useEffect(() => {
     setSecUnlocked(secretOn())
-    const off = onSecretChange(() => { setSecUnlocked(secretOn()); if (!secretOn()) setSecManage(false); load(false) })
+    const off = onSecretChange(() => { setSecUnlocked(secretOn()); if (!secretOn()) { setSecManage(false); setRemoteHits([]) } load(false) }) // 🔒 al bloquear se tiran los resultados del buscador traídos mientras estabas desbloqueado (podían incluir hilos secretos)
     return off
   }, [load])
 

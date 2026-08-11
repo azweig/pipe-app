@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar, Image } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getChannelsCatalog, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa } from "../api"
+import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getChannelsCatalog, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa, getSignatures, saveSignature } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -393,6 +393,55 @@ function ChannelsCard({ t }) {
   </>
 }
 
+// ✍️ FIRMA del correo, por cuenta ("*" = la que se usa si esa cuenta no tiene la suya). Un email se responde con
+// firma; un WhatsApp no. Sin configurar nada sale una mínima con tu nombre y empresa.
+function SignatureRows({ accounts }) {
+  const [data, setData] = useState(null)
+  const [acct, setAcct] = useState("*")
+  const [text, setText] = useState("")
+  const [open, setOpen] = useState(false)
+  useEffect(() => { getSignatures().then((r) => setData(r || {})).catch(() => setData({})) }, [])
+  useEffect(() => {
+    if (!data) return
+    const sigs = data.signatures || {}
+    const cur = sigs[String(acct).toLowerCase()] || sigs[acct]
+    setText(cur ? cur.text || "" : acct === "*" ? ((data.fallback && data.fallback.text) || "") : "")
+  }, [data, acct])
+  if (!data) return null
+  const sigs = data.signatures || {}
+  const opts = [["*", "Todas las cuentas"], ...(accounts || []).map((e) => [e.label || e.user, e.name || e.user])]
+  const save = async (t) => {
+    const r = await saveSignature(acct, t).catch(() => null)
+    if (r) { setData({ ...data, signatures: r.signatures || {} }); Alert.alert("Firma", t ? "Guardada." : "Quitada.") }
+    else Alert.alert("Firma", "No se pudo guardar.")
+  }
+  if (!open) return (
+    <Row onPress={() => setOpen(true)} last><Text style={{ fontSize: 18 }}>✍️</Text>
+      <View style={{ flex: 1 }}><Text style={{ fontSize: 15, color: theme.ink, fontWeight: "500" }}>Firma del correo</Text>
+        <Text style={{ fontSize: 12, color: theme.muted2 }}>{Object.keys(sigs).length ? `${Object.keys(sigs).length} configurada(s)` : "por defecto"}</Text></View>
+      <Text style={{ color: theme.muted2 }}>›</Text></Row>
+  )
+  return (
+    <View style={{ paddingVertical: 10 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+        {opts.map(([v, l]) => (
+          <TouchableOpacity key={v} onPress={() => setAcct(v)} style={{ paddingVertical: 6, paddingHorizontal: 11, borderRadius: 14, backgroundColor: acct === v ? theme.accent : theme.card, borderWidth: 1, borderColor: acct === v ? theme.accent : theme.line }}>
+            <Text style={{ fontSize: 12.5, color: acct === v ? "#fff" : theme.ink }}>{l}{sigs[String(v).toLowerCase()] ? " ✓" : ""}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <TextInput value={text} onChangeText={setText} multiline placeholder={"--\nTu nombre\nTu empresa"} placeholderTextColor={theme.muted2}
+        style={{ minHeight: 96, borderWidth: 1, borderColor: theme.line, borderRadius: 12, padding: 11, fontSize: 14.5, color: theme.ink, textAlignVertical: "top" }} />
+      <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+        <TouchableOpacity onPress={() => save(text)} style={{ flex: 1, paddingVertical: 11, borderRadius: 12, backgroundColor: theme.accent, alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Guardar</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setOpen(false)} style={{ paddingVertical: 11, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: theme.line }}>
+          <Text style={{ color: theme.muted }}>Cerrar</Text></TouchableOpacity>
+      </View>
+    </View>
+  )
+}
+
 export default function Settings({ navigation }) {
   const insets = useSafeAreaInsets()
   const t = useT()
@@ -538,7 +587,8 @@ export default function Settings({ navigation }) {
               <TouchableOpacity onPress={() => doRemoveEmail(e.label)} hitSlop={8}><Text style={{ color: theme.urgent, fontSize: 16 }}>✕</Text></TouchableOpacity>
             </Row>
           ))}
-          <Row onPress={() => setSheet("addEmail")} last><Text style={{ fontSize: 18 }}>➕</Text><Text style={{ fontSize: 15, color: theme.accent, fontWeight: "600" }}>{t("add_email")}</Text></Row>
+          <Row onPress={() => setSheet("addEmail")}><Text style={{ fontSize: 18 }}>➕</Text><Text style={{ fontSize: 15, color: theme.accent, fontWeight: "600" }}>{t("add_email")}</Text></Row>
+          <SignatureRows accounts={accts.email || []} />
         </Card>
 
         <ChannelsCard t={t} />
