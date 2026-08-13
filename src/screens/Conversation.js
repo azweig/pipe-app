@@ -12,7 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThread, getThreadDelta, getThreadBefore, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, sendStickerFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg, getEmailBody } from "../api"
+import { markSeen, getThread, getThreadDelta, getThreadBefore, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, sendStickerFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg, getEmailBody } from "../api"
 import { loadThread, saveThread } from "../store" // cache local (SQLite): historia completa en el celular, de la red solo el delta
 import { hhmm, color, preview, htmlToText } from "../util"
 import Avatar from "../components/Avatar"
@@ -151,6 +151,9 @@ export default function Conversation({ route, navigation }) {
       // 2) sincronizar con la red: delta si ya tengo maxRev cacheado, full si no
       if (meta && meta.maxRev) sync.current = { maxRev: meta.maxRev, ready: true }
       load()
+      // MARCAR LEÍDO al abrir. El móvil nunca lo hacía (markSeen solo se usaba en el botón "✓ Listo" de Inicio), así que
+      // leías la conversación y el punto azul de no-leído seguía ahí tras el próximo poll. Web y escritorio sí lo hacen.
+      markSeen(convKey, Date.now()).catch(() => {})
     })()
     getTargets(convKey).then((t) => { const ts = (t && t.targets) || []; setTargets(ts); setTarget(ts[(t && t.default) || 0] || null) }).catch(() => {})
     if (draft) setText(draft) // borrador de IA precargado desde Home
@@ -193,8 +196,17 @@ export default function Conversation({ route, navigation }) {
     setText("")
     const id = optimistic({ text: t, ...(covertOn ? { covert: { text: t, style: covertStyle } } : {}) }) // covert: burbuja muestra tu texto real + badge
     try { Haptics.selectionAsync() } catch {}
-    const r = await sendMsg(convKey, t, target, covertOn)
-    if (r && r.error) { setItems((x) => x.filter((m) => m.id !== id)); Alert.alert("No se pudo enviar", r.error) }
+    // api() LANZA si no hay red o si el hub responde 401. Sin try/catch la promesa quedaba rechazada sin manejar y la
+    // burbuja verde se quedaba con doble check para siempre, sobre un mensaje que nunca salió. En el subte eso es
+    // "creí que le avisé". Un fallo se dice, se saca la burbuja y el texto vuelve al compositor para reintentar.
+    let r = null
+    try { r = await sendMsg(convKey, t, target, covertOn) } catch (e) { r = { error: (e && e.message) || "sin conexión con el hub" } }
+    if (!r || r.error) {
+      setItems((x) => x.filter((m) => m.id !== id))
+      setText((cur) => cur || raw)
+      Alert.alert("No se pudo enviar", (r && r.error) || "Sin conexión con el hub. Revisá tu red e intentá de nuevo.")
+      return
+    }
     setTimeout(load, 700)
   }
 

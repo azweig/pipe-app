@@ -501,7 +501,10 @@ export default function Settings({ navigation }) {
   const [pin, setPin] = useState({ old: "", nu: "" })
   const [council, setCouncil] = useState({ enabled: false, members: [], chairman: "", available: [] })
   const [tcard, setTcard] = useState(null); const [tloading, setTloading] = useState(false); const [tedit, setTedit] = useState(false); const [tfix, setTfix] = useState(""); const [tcount, setTcount] = useState(0)
-  const [voice, setVoice] = useState(null); const [voiceBusy, setVoiceBusy] = useState(false)
+  // OJO con el nombre: `setVoice` ya viene importado de ../api (línea 5). Llamar así al setter de estado lo TAPABA, y
+  // pickVoice terminaba invocando el setter —que devuelve undefined— con un .catch encima: TypeError, y la preferencia
+  // de voz nunca llegaba al hub. El ✓ aparecía igual porque el estado local sí cambiaba.
+  const [voice, setVoiceState] = useState(null); const [voiceBusy, setVoiceBusy] = useState(false)
 
   const load = useCallback(async () => {
     const [h, a, l, v, n, s, ap, af, co] = await Promise.all([
@@ -565,8 +568,8 @@ export default function Settings({ navigation }) {
   async function trainOk() { if (tcard && tcard.key) await autopilotFeedbackMsg(tcard.key, true, "", tcard.draft || "").catch(() => {}); setTcount((n) => n + 1); loadCard() }
   async function trainSave() { const v = (tfix || "").trim(); if (!v || !tcard || !tcard.key) return; await autopilotFeedbackMsg(tcard.key, false, v, tcard.draft || "").catch(() => {}); setTcount((n) => n + 1); loadCard() }
   // 🗣️ Tu voz
-  useEffect(() => { getVoiceProfile().then((v) => { if (v && (v.dialect || v.languages || v.summary)) setVoice(v) }).catch(() => {}) }, [])
-  async function buildVoice() { setVoiceBusy(true); const r = await buildVoiceProfile().catch(() => null); setVoiceBusy(false); if (r && !r.error) setVoice(r); else Alert.alert("No se pudo", "¿Pocos mensajes tuyos?") }
+  useEffect(() => { getVoiceProfile().then((v) => { if (v && (v.dialect || v.languages || v.summary)) setVoiceState(v) }).catch(() => {}) }, [])
+  async function buildVoice() { setVoiceBusy(true); const r = await buildVoiceProfile().catch(() => null); setVoiceBusy(false); if (r && !r.error) setVoiceState(r); else Alert.alert("No se pudo", "¿Pocos mensajes tuyos?") }
   async function saveAutopilotPolicy() {
     const custom = apCustom.split(",").map((s) => s.trim()).filter(Boolean)
     setBusy(true); const r = await setAutopilotPolicy(apPol.presets || [], custom).catch(() => null); setBusy(false)
