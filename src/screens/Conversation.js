@@ -209,11 +209,19 @@ export default function Conversation({ route, navigation }) {
     const c = (await getAutopilotCfg(convKey).catch(() => null)) || { enabled: false, maxPerDay: 0 }
     setApCfg(c); setApMax(c.maxPerDay > 0 ? String(c.maxPerDay) : ""); setSheet("apcfg")
   }
+  // El piloto responde EN TU NOMBRE. Si la llamada falla y igual pintamos "apagado", creerías que está off mientras sigue
+  // contestando: el estado solo cambia cuando el hub lo confirma.
   async function apSave() {
     const m = apMax.trim() ? Math.max(1, Math.min(500, parseInt(apMax, 10) || 0)) : 0
-    await setAutopilotCfg(convKey, true, m).catch(() => {}); setApOn(true); setSheet(null)
+    const r = await setAutopilotCfg(convKey, true, m).catch((e) => ({ error: (e && e.message) || "error" }))
+    if (r && r.error) return Alert.alert("No se pudo activar el piloto", String(r.error))
+    setApOn(true); setSheet(null)
   }
-  async function apDisable() { await setAutopilotCfg(convKey, false).catch(() => {}); setApOn(false); setSheet(null) }
+  async function apDisable() {
+    const r = await setAutopilotCfg(convKey, false).catch((e) => ({ error: (e && e.message) || "error" }))
+    if (r && r.error) return Alert.alert("No se pudo desactivar", "Seguí asumiendo que el piloto está ACTIVO: " + String(r.error))
+    setApOn(false); setSheet(null)
+  }
   async function apSendFeedback(good) {
     await autopilotFeedbackMsg(convKey, good, good ? "" : apCorr.trim(), (apFb && apFb.original) || "").catch(() => {})
     setSheet(null); setApFb(null)
@@ -397,7 +405,8 @@ export default function Conversation({ route, navigation }) {
 
   // ── IA: sugerir respuesta / resumir ──
   async function aiSuggest() { setSheet(null); setBusy("Redactando una respuesta…"); const r = await suggestReply(convKey).catch(() => null); setBusy(null); if (r && r.draft) setText(r.draft); else Alert.alert("IA", "No pude sugerir una respuesta ahora.") }
-  async function aiSummarize(range) { setSheet(null); setBusy("Resumiendo el chat…"); const r = await summarizeChat(convKey, range).catch(() => null); setBusy(null); if (r && r.summary) { setSummary(r); setSheet("summary") } else Alert.alert("IA", "No hay mensajes en ese período.") }
+  // {secret:true} = el hilo toca una línea oculta por el 2º PIN, NO que falten mensajes.
+  async function aiSummarize(range) { setSheet(null); setBusy("Resumiendo el chat…"); const r = await summarizeChat(convKey, range).catch(() => null); setBusy(null); if (r && r.summary) { setSummary(r); setSheet("summary") } else if (r && r.secret) Alert.alert("🔒 Oculto", "Esta conversación incluye una línea protegida por tu 2º PIN. Desbloqueala para poder resumirla.") ; else Alert.alert("IA", "No hay mensajes en ese período.") }
 
   // ── REENVIAR ──
   async function forwardStart(item) {
