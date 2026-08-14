@@ -157,9 +157,11 @@ export const getCouncil = () => api("/api/autopilot/council")
 export const setCouncil = (c) => api("/api/autopilot/council", { method: "POST", body: JSON.stringify(c) })
 export const suggestReply = (key) => api("/api/thread/suggest-reply?key=" + encodeURIComponent(key))
 export const summarizeChat = (key, range = "all") => api("/api/thread/summarize?key=" + encodeURIComponent(key) + "&range=" + range)
-export const correctText = async (text, channel) => {
+export const correctText = async (text, channel, key) => {
   try { const p = await LocalAI.prefs(); if (p.correct && (await LocalAI.installed("llm"))) { const r = await LocalAI.correctLocal(text); if (r && !r.failed) return r } } catch {}
-  return api("/api/compose/correct", { method: "POST", body: JSON.stringify({ text, channel }) })
+  // 🔒 la clave del hilo va al server para que, si el destino es una cuenta secreta, corrija con el modelo local en vez
+  // de mandar lo que estás escribiendo a un tercero.
+  return api("/api/compose/correct", { method: "POST", body: JSON.stringify({ text, channel, key }) })
 }
 export const sttFile = async (fileUri, mime) => {
   try { const p = await LocalAI.prefs(); if (p.stt && (await LocalAI.installed("stt"))) { const r = await LocalAI.transcribeLocal(fileUri); if (r && !r.error && r.text) return r } } catch {}

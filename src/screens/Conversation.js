@@ -262,7 +262,7 @@ export default function Conversation({ route, navigation }) {
   async function showSendOptions(txt) {
     setBusy("Puliendo el texto…")
     const ch = (target && target.channel) || (convKey.startsWith("email:") ? "email" : "whatsapp")
-    const c = await correctText(txt, ch).catch(() => null); setBusy(null)
+    const c = await correctText(txt, ch, convKey).catch(() => null); setBusy(null)
     const corrected = (c && c.corrected || txt).trim(), original = (c && c.original || txt).trim(), alternative = (c && c.alternative || "").trim()
     setOpts({ corrected, original, alternative }); setSheet("opts")
   }
