@@ -184,7 +184,7 @@ export default function ContactProfile({ route, navigation }) {
         {/* DATOS DE CONTACTO: número (llamar por teléfono) + email (los de WhatsApp no se llaman por la app, pero SÍ por el teléfono real) */}
         {(phones.length || emails.length) ? (
           <View style={card}>
-            <Text style={cardHead}>{t("contact_data") !== "contact_data" ? t("contact_data") : "DATOS DE CONTACTO"}</Text>
+            <Text style={cardHead}>{t("contact_data") || "DATOS DE CONTACTO"}</Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               {phones.map((ph, i) => (
                 <TouchableOpacity key={"p" + i} onPress={() => Linking.openURL("tel:+" + ph)} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10 }}>
