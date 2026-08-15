@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getHome, homeAudioSource, actionDone, askBrain, replyDraft, markSeen } from "../api"
+import { getHome, homeAudioSource, actionDone, askBrain, replyDraft, markSeen, getOnboarding, getBase } from "../api"
 import Avatar from "../components/Avatar"
 
 const GREET_KEY = { manana: "good_morning", "mañana": "good_morning", tarde: "good_afternoon", noche: "good_evening", madrugada: "good_evening" }
@@ -45,6 +45,13 @@ export default function Home({ navigation }) {
   const [answer, setAnswer] = useState(null)
   const [asking, setAsking] = useState(false)
 
+  // Checklist de primer arranque, igual que la web y el escritorio. Esta app no conecta cuentas (no tiene los flujos de
+  // QR ni de contraseña de aplicación): muestra QUÉ falta y manda a la web del hub. El cálculo lo hace el server, así
+  // que las tres apps dicen lo mismo.
+  const [onb, setOnb] = useState(null)
+  const cargarOnb = useCallback(() => { getOnboarding().then(setOnb).catch(() => setOnb(null)) }, [])
+  useEffect(() => { cargarOnb(); const unsub = navigation.addListener("focus", cargarOnb); return unsub }, [cargarOnb, navigation])
+
   const load = useCallback(async (spin) => {
     if (spin) setRefreshing(true)
     try { const r = await getHome(); setD(r || {}) } catch (e) { if (e && e.code === 401) navigation.replace("Login") } finally { setRefreshing(false) }
@@ -83,6 +90,23 @@ export default function Home({ navigation }) {
         <Text style={{ fontSize: 27, fontWeight: "800", color: theme.ink, flex: 1 }}>{GREET_KEY[d.period] ? t(GREET_KEY[d.period]) : "👋"}</Text>
         <TouchableOpacity onPress={() => navigation.navigate("Settings")} hitSlop={10} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: theme.card, justifyContent: "center", alignItems: "center" }}><Text style={{ fontSize: 20 }}>⚙️</Text></TouchableOpacity>
       </View>
+      {onb && !onb.listo ? (
+        <View style={{ backgroundColor: theme.card, borderRadius: 14, padding: 12, marginTop: 12 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+            <Text style={{ fontWeight: "800", color: theme.ink, fontSize: 14 }}>{t("onb_title")}</Text>
+            <Text style={{ color: theme.muted, fontSize: 13 }}>{onb.done}/{onb.total}</Text>
+          </View>
+          {onb.steps.map((st) => (
+            <View key={st.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 3 }}>
+              <Text style={{ fontSize: 14 }}>{st.ok ? "✓" : st.icon}</Text>
+              <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, color: st.ok ? theme.muted : theme.ink }}>{t("onb_" + st.id) || st.title}</Text>
+            </View>
+          ))}
+          <TouchableOpacity onPress={() => Linking.openURL(getBase())} style={{ backgroundColor: theme.accent, borderRadius: 10, paddingVertical: 9, alignItems: "center", marginTop: 8 }}>
+            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13.5 }}>{t("onb_cta")}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* Jarvis */}
       <View style={{ marginTop: 14, flexDirection: "row", gap: 8, alignItems: "center" }}>

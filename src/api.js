@@ -261,3 +261,6 @@ export const investigateContact = (key, links) => api("/api/contact/investigate"
 // siempre. No crea nada: si ya existe conversación con ese destino, devuelve la que hay.
 export const nuevaConversacion = (destino, channel) =>
   api("/api/conversation/new", { method: "POST", body: JSON.stringify({ destino, channel }) })
+
+// checklist de primer arranque (WhatsApp / correo / IA). El cálculo vive en el hub: una sola fuente de verdad.
+export const getOnboarding = () => api("/api/onboarding")

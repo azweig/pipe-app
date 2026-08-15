@@ -19,6 +19,10 @@ export const DICT = {
     inbox: "Bandeja", search_placeholder: "Buscar por nombre, teléfono o email…", silenced: "Silenciados", no_convs: "Sin conversaciones en esta vista.", nothing_matches: "Nada coincide con la búsqueda.",
     // multi-select merge (unir contactos)
     // ── empezar una conversación con alguien que todavía no te escribió (paridad con web y escritorio) ──
+    onb_title: "Configurá tu hub", onb_cta: "Configurar en la web ↗",
+    // los títulos se traducen POR ID acá: esta app no tiene traductor de DOM, así que pintar el texto que manda el
+    // server dejaba el checklist en español en un teléfono en inglés.
+    onb_whatsapp: "Conectá WhatsApp", onb_email: "Agregá tu correo", onb_ia: "Elegí tu IA",
     new_chat: "Nuevo", new_chat_title: "✎ Nueva conversación",
     new_chat_sub: "Un teléfono con código de país (+51 999 111 222) o un correo. Si ya hablaste con esa persona, se abre la conversación que ya existe.",
     new_chat_ph: "+51 999 111 222  ·  alguien@empresa.com",
@@ -87,6 +91,8 @@ export const DICT = {
     err_title: "Something went wrong", err_sub: "An unexpected error occurred. You can try again.",
     login_tagline: "Your second brain. Enter with your PIN.", server: "Server", pin: "PIN", enter: "Enter", login_error: "Wrong PIN",
     inbox: "Inbox", search_placeholder: "Search by name, phone or email…", silenced: "Silenced", no_convs: "No conversations in this view.", nothing_matches: "Nothing matches your search.",
+    onb_title: "Set up your hub", onb_cta: "Set up on the web ↗",
+    onb_whatsapp: "Connect WhatsApp", onb_email: "Add your email", onb_ia: "Choose your AI",
     new_chat: "New", new_chat_title: "✎ New conversation",
     new_chat_sub: "A phone number with country code (+1 555 111 222) or an email address. If you've already talked to them, the existing conversation opens.",
     new_chat_ph: "+1 555 111 222  ·  someone@company.com",
