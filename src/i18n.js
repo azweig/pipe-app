@@ -23,6 +23,7 @@ export const DICT = {
     // los títulos se traducen POR ID acá: esta app no tiene traductor de DOM, así que pintar el texto que manda el
     // server dejaba el checklist en español en un teléfono en inglés.
     onb_whatsapp: "Conectá WhatsApp", onb_email: "Agregá tu correo", onb_ia: "Elegí tu IA",
+    ch_: "Teléfono o correo", ch_telegram: "Telegram", ch_slack: "Slack", ch_signal: "Signal", ch_teams: "Teams",
     new_chat: "Nuevo", new_chat_title: "✎ Nueva conversación",
     new_chat_sub: "Un teléfono con código de país (+51 999 111 222) o un correo. Si ya hablaste con esa persona, se abre la conversación que ya existe.",
     new_chat_ph: "+51 999 111 222  ·  alguien@empresa.com",
@@ -93,6 +94,7 @@ export const DICT = {
     inbox: "Inbox", search_placeholder: "Search by name, phone or email…", silenced: "Silenced", no_convs: "No conversations in this view.", nothing_matches: "Nothing matches your search.",
     onb_title: "Set up your hub", onb_cta: "Set up on the web ↗",
     onb_whatsapp: "Connect WhatsApp", onb_email: "Add your email", onb_ia: "Choose your AI",
+    ch_: "Phone or email", ch_telegram: "Telegram", ch_slack: "Slack", ch_signal: "Signal", ch_teams: "Teams",
     new_chat: "New", new_chat_title: "✎ New conversation",
     new_chat_sub: "A phone number with country code (+1 555 111 222) or an email address. If you've already talked to them, the existing conversation opens.",
     new_chat_ph: "+1 555 111 222  ·  someone@company.com",

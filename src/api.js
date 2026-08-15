@@ -264,3 +264,6 @@ export const nuevaConversacion = (destino, channel) =>
 
 // checklist de primer arranque (WhatsApp / correo / IA). El cálculo vive en el hub: una sola fuente de verdad.
 export const getOnboarding = () => api("/api/onboarding")
+
+// canales que se pueden estrenar (sólo los CONECTADOS)
+export const canalesNuevaConv = () => api("/api/conversation/channels")

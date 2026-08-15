@@ -6,7 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { theme } from "../theme"
 import { useT } from "../i18n"
 import { getThreads, searchThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent, mergeContacts, getAccounts,
-  secretOn, isSecretPinSet, onSecretChange, secretLock, getSecretStatus, secretSetup, secretUnlock, getSecretState, secretSetWa, secretSetAccount, nuevaConversacion } from "../api"
+  secretOn, isSecretPinSet, onSecretChange, secretLock, getSecretStatus, secretSetup, secretUnlock, getSecretState, secretSetWa, secretSetAccount, nuevaConversacion, canalesNuevaConv } from "../api"
 import { ago, preview, espIcon, bucketCat } from "../util"
 // (ago se usa también en las tarjetas de resultados de la búsqueda contextual)
 import Avatar from "../components/Avatar"
@@ -41,6 +41,8 @@ export default function Inbox({ navigation }) {
   const [nuevoChat, setNuevoChat] = useState(false)   // hoja para empezar una conversación con alguien nuevo
   const [destino, setDestino] = useState("")
   const [destErr, setDestErr] = useState("")
+  const [canales, setCanales] = useState([])
+  const [canal, setCanal] = useState("")
   const [newName, setNewName] = useState("")
   // MODO SELECCIÓN: elegir 2+ contactos y UNIRLOS (dedupe la misma persona partida en varios hilos). El 1ro seleccionado (en orden de lista) es el que se CONSERVA.
   const [selMode, setSelMode] = useState(false)
@@ -97,10 +99,18 @@ export default function Inbox({ navigation }) {
 
   // Empezar una conversación con alguien que TODAVÍA no te escribió. El server resuelve el destino a la clave de hilo
   // de siempre y abrimos esa conversación como cualquier otra: el envío después es el camino normal.
+  useEffect(() => {
+    if (!nuevoChat) return
+    canalesNuevaConv().then((r) => {
+      const cs = (r && r.channels) || []
+      setCanales(cs)
+      setCanal((c) => (cs.some((x) => x.id === c) ? c : "")) // el canal viejo no puede sobrevivir si ya no está en la lista
+    }).catch(() => { setCanales([]); setCanal("") })
+  }, [nuevoChat])
   const abrirNuevoChat = async () => {
     const v = destino.trim(); if (!v) return
     setDestErr("")
-    const r = await nuevaConversacion(v).catch(() => null)
+    const r = await nuevaConversacion(v, canal).catch(() => null)
     if (!r || r.error) { setDestErr((r && r.error) || t("new_chat_fail")); return }
     setNuevoChat(false); setDestino("")
     navigation.navigate("Conversation", { convKey: r.key, name: r.name })
@@ -486,7 +496,16 @@ export default function Inbox({ navigation }) {
       <Sheet visible={nuevoChat} onClose={() => { setNuevoChat(false); setDestErr("") }}>
         <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>{t("new_chat_title")}</Text>
         <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 14 }}>{t("new_chat_sub")}</Text>
-        <TextInput value={destino} onChangeText={(v) => { setDestino(v); setDestErr("") }} placeholder={t("new_chat_ph")} placeholderTextColor={theme.muted2}
+        {canales.length > 1 ? (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+            {canales.map((c) => (
+              <TouchableOpacity key={c.id} onPress={() => setCanal(c.id)} style={{ backgroundColor: canal === c.id ? theme.accent : theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: canal === c.id ? "#fff" : theme.accent }}>{t("ch_" + c.id) || c.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+        <TextInput value={destino} onChangeText={(v) => { setDestino(v); setDestErr("") }} placeholder={(canales.find((c) => c.id === canal) || {}).hint || t("new_chat_ph")} placeholderTextColor={theme.muted2}
           autoFocus autoCapitalize="none" autoCorrect={false} returnKeyType="go" onSubmitEditing={abrirNuevoChat}
           style={{ backgroundColor: theme.bg, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 13, fontSize: 15, color: theme.ink, marginBottom: destErr ? 6 : 12 }} />
         {destErr ? <Text style={{ fontSize: 12.5, color: "#e5484d", marginBottom: 12 }}>{destErr}</Text> : null}
