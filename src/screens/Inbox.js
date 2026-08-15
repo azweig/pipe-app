@@ -6,7 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { theme } from "../theme"
 import { useT } from "../i18n"
 import { getThreads, searchThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent, mergeContacts, getAccounts,
-  secretOn, isSecretPinSet, onSecretChange, secretLock, getSecretStatus, secretSetup, secretUnlock, getSecretState, secretSetWa, secretSetAccount } from "../api"
+  secretOn, isSecretPinSet, onSecretChange, secretLock, getSecretStatus, secretSetup, secretUnlock, getSecretState, secretSetWa, secretSetAccount, nuevaConversacion } from "../api"
 import { ago, preview, espIcon, bucketCat } from "../util"
 // (ago se usa también en las tarjetas de resultados de la búsqueda contextual)
 import Avatar from "../components/Avatar"
@@ -38,6 +38,9 @@ export default function Inbox({ navigation }) {
   const [aiRes, setAiRes] = useState(null) // búsqueda contextual (router-search): {loading}|{error}|{mode,type,answer,results,threads,…}
   const [refreshing, setRefreshing] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [nuevoChat, setNuevoChat] = useState(false)   // hoja para empezar una conversación con alguien nuevo
+  const [destino, setDestino] = useState("")
+  const [destErr, setDestErr] = useState("")
   const [newName, setNewName] = useState("")
   // MODO SELECCIÓN: elegir 2+ contactos y UNIRLOS (dedupe la misma persona partida en varios hilos). El 1ro seleccionado (en orden de lista) es el que se CONSERVA.
   const [selMode, setSelMode] = useState(false)
@@ -90,6 +93,17 @@ export default function Inbox({ navigation }) {
     const v = newName.trim(); if (!v) return
     try { const e = await saveEspacio({ name: v }); setCreating(false); setNewName(""); load(); if (e && e.id) navigation.navigate("Espacio", { id: e.id, name: e.name }) } // creado → abrilo para agregar reglas
     catch (err) { Alert.alert("Error", err.message || "No se pudo crear el espacio") }
+  }
+
+  // Empezar una conversación con alguien que TODAVÍA no te escribió. El server resuelve el destino a la clave de hilo
+  // de siempre y abrimos esa conversación como cualquier otra: el envío después es el camino normal.
+  const abrirNuevoChat = async () => {
+    const v = destino.trim(); if (!v) return
+    setDestErr("")
+    const r = await nuevaConversacion(v).catch(() => null)
+    if (!r || r.error) { setDestErr((r && r.error) || t("new_chat_fail")); return }
+    setNuevoChat(false); setDestino("")
+    navigation.navigate("Conversation", { convKey: r.key, name: r.name })
   }
 
   const load = useCallback(async (spin) => {
@@ -357,6 +371,13 @@ export default function Inbox({ navigation }) {
           <TouchableOpacity onPress={() => selMode ? exitSel() : setSelMode(true)} hitSlop={10} style={{ flexDirection: "row", alignItems: "center", backgroundColor: selMode ? theme.accent : theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
             <Text style={{ fontSize: 13.5, color: selMode ? "#fff" : theme.accent, fontWeight: "700" }}>{selMode ? t("cancel") : t("select")}</Text>
           </TouchableOpacity>
+          {/* escribirle a alguien que TODAVÍA no te escribió: antes había que salir a WhatsApp y volver por el bridge */}
+          {!selMode ? (
+            <TouchableOpacity onPress={() => setNuevoChat(true)} hitSlop={10} style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+              <Text style={{ fontSize: 16, color: theme.accent, fontWeight: "800", marginTop: -1 }}>✎</Text>
+              <Text style={{ fontSize: 13.5, color: theme.accent, fontWeight: "700" }}>{t("new_chat")}</Text>
+            </TouchableOpacity>
+          ) : null}
           {!selMode ? (
             <TouchableOpacity onPress={() => setCreating(true)} hitSlop={10} style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: theme.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
               <Text style={{ fontSize: 16, color: theme.accent, fontWeight: "800", marginTop: -1 }}>+</Text>
@@ -458,6 +479,19 @@ export default function Inbox({ navigation }) {
           style={{ backgroundColor: theme.bg, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 13, fontSize: 20, letterSpacing: 5, textAlign: "center", color: theme.ink, marginBottom: 12 }} />
         <TouchableOpacity onPress={() => closePin(pinVal.trim() || null)} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}>
           <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>{t("secret_continue")}</Text>
+        </TouchableOpacity>
+      </Sheet>
+
+      {/* escribirle a alguien nuevo: un teléfono con código de país o un correo */}
+      <Sheet visible={nuevoChat} onClose={() => { setNuevoChat(false); setDestErr("") }}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>{t("new_chat_title")}</Text>
+        <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 14 }}>{t("new_chat_sub")}</Text>
+        <TextInput value={destino} onChangeText={(v) => { setDestino(v); setDestErr("") }} placeholder={t("new_chat_ph")} placeholderTextColor={theme.muted2}
+          autoFocus autoCapitalize="none" autoCorrect={false} returnKeyType="go" onSubmitEditing={abrirNuevoChat}
+          style={{ backgroundColor: theme.bg, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 13, fontSize: 15, color: theme.ink, marginBottom: destErr ? 6 : 12 }} />
+        {destErr ? <Text style={{ fontSize: 12.5, color: "#e5484d", marginBottom: 12 }}>{destErr}</Text> : null}
+        <TouchableOpacity onPress={abrirNuevoChat} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>{t("new_chat_open")}</Text>
         </TouchableOpacity>
       </Sheet>
 

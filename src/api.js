@@ -256,3 +256,8 @@ export const getContactSocial = (key) => api("/api/contact/social?key=" + encode
 export const setContactLinks = (key, links) => api("/api/contact/links", { method: "POST", body: JSON.stringify({ key, links }) })
 // corre Apify anónimo (30-120s) → devuelve el enrichment. Mostrar spinner.
 export const investigateContact = (key, links) => api("/api/contact/investigate", { method: "POST", body: JSON.stringify({ key, links }) })
+
+// EMPEZAR UNA CONVERSACIÓN NUEVA: el server resuelve lo que escribiste (teléfono / correo) a la clave de hilo de
+// siempre. No crea nada: si ya existe conversación con ese destino, devuelve la que hay.
+export const nuevaConversacion = (destino, channel) =>
+  api("/api/conversation/new", { method: "POST", body: JSON.stringify({ destino, channel }) })

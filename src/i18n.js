@@ -18,6 +18,11 @@ export const DICT = {
     // inbox
     inbox: "Bandeja", search_placeholder: "Buscar por nombre, teléfono o email…", silenced: "Silenciados", no_convs: "Sin conversaciones en esta vista.", nothing_matches: "Nada coincide con la búsqueda.",
     // multi-select merge (unir contactos)
+    // ── empezar una conversación con alguien que todavía no te escribió (paridad con web y escritorio) ──
+    new_chat: "Nuevo", new_chat_title: "✎ Nueva conversación",
+    new_chat_sub: "Un teléfono con código de país (+51 999 111 222) o un correo. Si ya hablaste con esa persona, se abre la conversación que ya existe.",
+    new_chat_ph: "+51 999 111 222  ·  alguien@empresa.com",
+    new_chat_open: "Abrir conversación", new_chat_fail: "No pude resolver ese destino.",
     select: "Seleccionar", merge_selected: "Unir ({n})", merged_n: "{n} contactos unidos", merge_pick_2: "Elegí 2 o más para unir", merge_keeps: "Se conserva {name}", merging: "Uniendo…", merge_fail: "No se pudo unir — probá de nuevo",
     // 🔒 cuentas secretas
     secret_pin: "PIN", secret_hide: "Ocultar", secret_accounts: "Cuentas ocultas", secret_accounts_sub: "Marcá qué cuenta ocultar — toda su actividad se esconde sin el PIN.", secret_wa: "WhatsApp", secret_email: "Correo", secret_hide_now: "Ocultar ahora", secret_none: "—", secret_continue: "Continuar",
@@ -82,6 +87,10 @@ export const DICT = {
     err_title: "Something went wrong", err_sub: "An unexpected error occurred. You can try again.",
     login_tagline: "Your second brain. Enter with your PIN.", server: "Server", pin: "PIN", enter: "Enter", login_error: "Wrong PIN",
     inbox: "Inbox", search_placeholder: "Search by name, phone or email…", silenced: "Silenced", no_convs: "No conversations in this view.", nothing_matches: "Nothing matches your search.",
+    new_chat: "New", new_chat_title: "✎ New conversation",
+    new_chat_sub: "A phone number with country code (+1 555 111 222) or an email address. If you've already talked to them, the existing conversation opens.",
+    new_chat_ph: "+1 555 111 222  ·  someone@company.com",
+    new_chat_open: "Open conversation", new_chat_fail: "I couldn't resolve that destination.",
     select: "Select", merge_selected: "Merge ({n})", merged_n: "{n} contacts merged", merge_pick_2: "Pick 2 or more to merge", merge_keeps: "Keeps {name}", merging: "Merging…", merge_fail: "Couldn't merge — try again",
     secret_pin: "PIN", secret_hide: "Hide", secret_accounts: "Hidden accounts", secret_accounts_sub: "Choose which account to hide — all its activity is hidden without the PIN.", secret_wa: "WhatsApp", secret_email: "Email", secret_hide_now: "Hide now", secret_none: "—", secret_continue: "Continue",
     secret_pin_title: "PIN", secret_enter_pin: "Enter your PIN", secret_create_pin: "Create your PIN", secret_create_pin_sub: "6-12 digits, different from your entry PIN.", secret_wrong_pin: "Wrong PIN", secret_save_fail: "Couldn't save (connection?). Try again.", secret_relocked: "The PIN locked — enter it again.",
