@@ -17,6 +17,7 @@ const CH_BADGE = {
   whatsapp: { t: "WhatsApp", bg: "#25D366" }, email: { t: "Mail", bg: "#EA4335" }, telegram: { t: "Telegram", bg: "#229ED9" },
   instagram: { t: "Instagram", bg: "#E1306C" }, signal: { t: "Signal", bg: "#3A76F0" }, messenger: { t: "Messenger", bg: "#0084FF" },
   discord: { t: "Discord", bg: "#5865F2" }, teams: { t: "Teams", bg: "#5B5FC7" }, sms: { t: "SMS", bg: "#34C759" }, kofi: { t: "Ko-fi", bg: "#FF5E5B" }, meeting: { t: "Reunión", bg: "#8b5cf6" },
+  slack: { t: "Slack", bg: "#4A154B" }, facebook: { t: "Facebook", bg: "#1877F2" }, linkedin: { t: "LinkedIn", bg: "#0A66C2" },
 }
 function channelsOf(item) {
   const out = []; const add = (c) => { if (c && CH_BADGE[c] && !out.includes(c)) out.push(c) }

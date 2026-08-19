@@ -69,7 +69,7 @@ function EgoGraph({ nm, photo, rels }) {
   )
 }
 
-const CH = { whatsapp: { t: "WhatsApp", c: "#25D366" }, email: { t: "Mail", c: "#EA4335" }, telegram: { t: "Telegram", c: "#229ED9" }, instagram: { t: "Instagram", c: "#E1306C" }, signal: { t: "Signal", c: "#3A76F0" }, teams: { t: "Teams", c: "#5B5FC7" }, messenger: { t: "Messenger", c: "#0084FF" }, sms: { t: "SMS", c: "#34C759" } }
+const CH = { whatsapp: { t: "WhatsApp", c: "#25D366" }, email: { t: "Mail", c: "#EA4335" }, telegram: { t: "Telegram", c: "#229ED9" }, instagram: { t: "Instagram", c: "#E1306C" }, signal: { t: "Signal", c: "#3A76F0" }, teams: { t: "Teams", c: "#5B5FC7" }, messenger: { t: "Messenger", c: "#0084FF" }, sms: { t: "SMS", c: "#34C759" }, discord: { t: "Discord", c: "#5865F2" }, slack: { t: "Slack", c: "#4A154B" }, facebook: { t: "Facebook", c: "#1877F2" }, linkedin: { t: "LinkedIn", c: "#0A66C2" } }
 const chName = (c) => (CH[c] ? CH[c].t : c)
 const mediaIcon = (m) => !m.media ? "" : (m.mediaType === "audio" ? "🎤 " : m.mediaType === "video" ? "📹 " : (m.mediaType === "image" || m.mediaType === "sticker") ? "🖼 " : "📎 ")
 const relDur = (ts) => { if (!ts) return "—"; const d = (Date.now() - ts) / 86400000; return d < 31 ? Math.round(d) + " d" : d < 365 ? Math.round(d / 30) + " meses" : (d / 365).toFixed(d < 730 ? 1 : 0) + " años" }

@@ -6,7 +6,7 @@ import { getEspacio, getEspacios, saveEspacio, deleteEspacio, espacioAddRule, es
 import { color, initials, ago, preview, espIcon } from "../util"
 import Sheet from "../components/Sheet"
 
-const CH_DOT = { whatsapp: "#25D366", email: "#EA4335", telegram: "#229ED9", instagram: "#E1306C", signal: "#3A76F0", meeting: "#8b5cf6" }
+const CH_DOT = { whatsapp: "#25D366", email: "#EA4335", telegram: "#229ED9", instagram: "#E1306C", signal: "#3A76F0", meeting: "#8b5cf6", discord: "#5865F2", slack: "#4A154B", facebook: "#1877F2", linkedin: "#0A66C2", teams: "#5B5FC7" }
 // reglas: por qué mensajes entran al espacio. phone=número WhatsApp, email=correo exacto, domain=dominio del correo, name=nombre del contacto
 const RULE_TYPES = [
   { id: "phone", label: "📱 Número", ph: "51987654321" },

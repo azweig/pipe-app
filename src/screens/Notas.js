@@ -13,7 +13,7 @@ import MediaBubble from "../components/MediaBubble"
 
 const URL_RE = /https?:\/\/\S+/
 const QUICK = ["Resumí mis notas de esta semana", "¿Qué estoy postergando?", "¿Qué links guardé para leer?"]
-const CH_LABEL = { whatsapp: "WhatsApp", email: "Mail", telegram: "Telegram", instagram: "Instagram", signal: "Signal", messenger: "Messenger", sms: "SMS", self: "" }
+const CH_LABEL = { whatsapp: "WhatsApp", email: "Mail", telegram: "Telegram", instagram: "Instagram", signal: "Signal", messenger: "Messenger", sms: "SMS", self: "", discord: "Discord", slack: "Slack", facebook: "Facebook", linkedin: "LinkedIn", teams: "Teams" }
 
 // player de video que se monta SOLO al tocar (evita N players vivos en la lista)
 function VideoPlayerView({ source }) {
