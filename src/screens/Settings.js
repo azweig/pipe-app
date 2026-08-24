@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
-import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar, Image } from "react-native"
+import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar, Image, Linking } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getChannelsCatalog, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa, getSignatures, saveSignature, getAssistant, setAssistant, tryAssistant } from "../api"
+import { getBase, getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getChannelsCatalog, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa, getSignatures, saveSignature, getAssistant, setAssistant, tryAssistant } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -492,6 +492,8 @@ export default function Settings({ navigation }) {
   const [apPol, setApPol] = useState({ presets: [], custom: [], presets_available: [] }) // 🤖 política global del piloto
   const [apCustom, setApCustom] = useState("")
   const [apify, setApify] = useState({ accounts: [] }) // 🔎 cuentas Apify (enriquecimiento social)
+  const [backupSt, setBackupSt] = useState(null) // 💾 backup automático en Drive (misma tarjeta que web y escritorio)
+  useEffect(() => { api("/api/backup/status").then(setBackupSt).catch(() => setBackupSt({ connected: false })) }, [])
   const [apf, setApf] = useState({ name: "", token: "" })
   const [sheet, setSheet] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -641,6 +643,26 @@ export default function Settings({ navigation }) {
             <Row key={k.id}><Text style={{ fontSize: 18 }}>{k.provider === "ollama" || k.provider === "gestionado" ? "🖥️" : "🔑"}</Text><View style={{ flex: 1 }}><Text style={{ fontSize: 14.5, color: theme.ink, fontWeight: "500" }}>{k.name || k.provider}</Text><Text style={{ fontSize: 12, color: theme.muted2 }}>{PLABEL[k.provider] || k.provider}</Text></View>{k.hasToken ? <Text style={{ color: theme.ok, fontSize: 13 }}>✓</Text> : null}</Row>
           ))}
           <Row onPress={() => setSheet("addKey")} last><Text style={{ fontSize: 18 }}>➕</Text><Text style={{ fontSize: 15, color: theme.accent, fontWeight: "600" }}>{t("add_key")}</Text></Row>
+        </Card>
+
+        <Card title="💾 Backup automático">
+          <View style={{ paddingHorizontal: 14, paddingTop: 11, paddingBottom: 5 }}>
+            <Text style={{ fontSize: 13, color: theme.text, fontWeight: "600" }}>
+              {backupSt?.connected ? `✅ Google Drive conectado` : "⚠️ Todo vive en un solo disco"}
+            </Text>
+            <Text style={{ fontSize: 12.5, color: theme.muted, lineHeight: 17, marginTop: 4 }}>
+              {backupSt?.connected
+                ? `${backupSt.email || ""} · cada noche sube una copia cifrada. Se guardan las últimas 5.`
+                : "Se sube tu base, tu configuración y tus credenciales ya cifradas: Google guarda algo que no puede leer. Pipe solo ve los archivos que él mismo sube, no el resto de tu Drive."}
+            </Text>
+          </View>
+          {/* el OAuth va por el NAVEGADOR del teléfono: Google bloquea el login dentro de un WebView */}
+          <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 12 }}
+            onPress={() => Linking.openURL(String(getBase()).replace(/\/$/, "") + "/oauth/backup/start")}>
+            <Text style={{ fontSize: 14.5, color: theme.accent, fontWeight: "600" }}>
+              {backupSt?.connected ? "Reconectar o cambiar de cuenta" : "Conectar Google Drive"}
+            </Text>
+          </TouchableOpacity>
         </Card>
 
         <Card title={"🔎 " + t("apify_title")}>
