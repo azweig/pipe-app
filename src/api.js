@@ -244,6 +244,8 @@ export const saveEspacio = (e) => api("/api/espacio", { method: "POST", body: JS
 export const deleteEspacio = (id) => api("/api/espacio/delete", { method: "POST", body: JSON.stringify({ id }) })
 export const espacioAddRule = (id, type, value) => api("/api/espacio/rule", { method: "POST", body: JSON.stringify({ id, type, value }) })
 export const espacioRemoveRule = (id, idx) => api("/api/espacio/rule/delete", { method: "POST", body: JSON.stringify({ id, idx }) })
+export const espacioAddException = (id, type, value) => api("/api/espacio/exception", { method: "POST", body: JSON.stringify({ id, type, value }) })
+export const espacioRemoveException = (id, idx) => api("/api/espacio/exception/delete", { method: "POST", body: JSON.stringify({ id, idx }) })
 export const setArchive = (key, on = true) => api("/api/contact/archive", { method: "POST", body: JSON.stringify({ key, on }) })
 export const setSilence = (key, on = true) => api("/api/contact/silence", { method: "POST", body: JSON.stringify({ key, on }) })
 // ── Enriquecimiento social (Apify anónimo) ──

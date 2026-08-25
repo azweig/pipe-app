@@ -45,6 +45,8 @@ export default function Inbox({ navigation }) {
   const [canales, setCanales] = useState([])
   const [canal, setCanal] = useState("")
   const [newName, setNewName] = useState("")
+  const [newIcon, setNewIcon] = useState("")
+  const [espErr, setEspErr] = useState("")
   // MODO SELECCIÓN: elegir 2+ contactos y UNIRLOS (dedupe la misma persona partida en varios hilos). El 1ro seleccionado (en orden de lista) es el que se CONSERVA.
   const [selMode, setSelMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
@@ -93,9 +95,11 @@ export default function Inbox({ navigation }) {
   }, [rows, navigation])
 
   async function createEspacio() {
-    const v = newName.trim(); if (!v) return
-    try { const e = await saveEspacio({ name: v }); setCreating(false); setNewName(""); load(); if (e && e.id) navigation.navigate("Espacio", { id: e.id, name: e.name }) } // creado → abrilo para agregar reglas
-    catch (err) { Alert.alert("Error", err.message || "No se pudo crear el espacio") }
+    const v = newName.trim()
+    if (!v) return setEspErr("Ponle un nombre al espacio.") // validamos al tocar, nunca con el botón deshabilitado
+    setEspErr("")
+    try { const e = await saveEspacio({ name: v, icon: newIcon.trim() }); setCreating(false); setNewName(""); setNewIcon(""); load(); if (e && e.id) navigation.navigate("Espacio", { id: e.id, name: e.name }) } // creado → ábrelo para agregar reglas
+    catch (err) { setEspErr(err.message || "No se pudo crear el espacio") }
   }
 
   // Empezar una conversación con alguien que TODAVÍA no te escribió. El server resuelve el destino a la clave de hilo
@@ -518,9 +522,13 @@ export default function Inbox({ navigation }) {
       {/* crear espacio: solo el nombre; las reglas se agregan adentro (⚙️) */}
       <Sheet visible={creating} onClose={() => setCreating(false)}>
         <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>➕ Nuevo espacio</Text>
-        <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 14 }}>Un espacio agrupa mensajes por reglas (un número, un dominio, un nombre…). Ponele nombre y después agregás las reglas.</Text>
-        <TextInput value={newName} onChangeText={setNewName} placeholder="Ej: Trabajo, Familia, Banco…" placeholderTextColor={theme.muted2} autoFocus returnKeyType="done" onSubmitEditing={createEspacio} style={{ backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: theme.ink, marginBottom: 14 }} />
-        <TouchableOpacity onPress={createEspacio} disabled={!newName.trim()} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center", opacity: newName.trim() ? 1 : 0.5 }}><Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Crear y agregar reglas</Text></TouchableOpacity>
+        <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 14 }}>Un espacio agrupa mensajes por reglas (un número, un dominio, un nombre…). Ponle nombre y después le agregas las reglas.</Text>
+        <View style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
+          <TextInput value={newName} onChangeText={setNewName} placeholder="Ej: Trabajo, Familia, Banco…" placeholderTextColor={theme.muted2} autoFocus returnKeyType="done" onSubmitEditing={createEspacio} style={{ flex: 1, backgroundColor: theme.bg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: theme.ink }} />
+          <TextInput value={newIcon} onChangeText={setNewIcon} placeholder="🎓" placeholderTextColor={theme.muted2} style={{ width: 62, textAlign: "center", backgroundColor: theme.bg, borderRadius: 12, paddingVertical: 12, fontSize: 19, color: theme.ink }} />
+        </View>
+        {espErr ? <Text style={{ color: theme.urgent, fontSize: 12.5, marginBottom: 10 }}>{espErr}</Text> : null}
+        <TouchableOpacity onPress={createEspacio} style={{ backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Crear y agregar reglas</Text></TouchableOpacity>
       </Sheet>
     </View>
   )
