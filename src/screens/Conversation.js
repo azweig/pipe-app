@@ -12,7 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { markSeen, getThread, getThreadDelta, getThreadBefore, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, sendStickerFile, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg, getEmailBody } from "../api"
+import { markSeen, getThread, getThreadDelta, getThreadBefore, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, sendStickerFile, sendContact, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg, getEmailBody } from "../api"
 import { loadThread, saveThread } from "../store" // cache local (SQLite): historia completa en el celular, de la red solo el delta
 import { hhmm, color, preview, htmlToText } from "../util"
 import Avatar from "../components/Avatar"
@@ -85,7 +85,8 @@ export default function Conversation({ route, navigation }) {
   const [targets, setTargets] = useState([])
   const [target, setTarget] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
-  const [sheet, setSheet] = useState(null) // 'menu' | 'target' | 'ai' | 'forward' | 'opts' | 'summary'
+  const [sheet, setSheet] = useState(null) // 'menu' | 'target' | 'ai' | 'forward' | 'contacto' | 'opts' | 'summary'
+  const [ct, setCt] = useState(null) // selector de contacto a enviar: { list, q }
   const [menuItem, setMenuItem] = useState(null)
   const [mediaSum, setMediaSum] = useState(null) // #5: {loading}|{summary,transcript,lang}|{error}
   const [fwd, setFwd] = useState(null) // { item, list, q }
@@ -427,6 +428,20 @@ export default function Conversation({ route, navigation }) {
     const arr = (Array.isArray(list) ? list : (list.threads || [])).filter((t) => t.key && t.key !== "self" && t.key !== convKey && !t.espacio)
     setFwd({ item, list: arr, q: "" }); setSheet("forward")
   }
+  // ENVIAR UN CONTACTO: elegís a alguien que el hub ya conoce y el SERVER arma el vCard con sus datos reales.
+  // Llega como archivo .vcf con leyenda (nombre + teléfono): el bridge de WhatsApp no sabe mandar tarjetas nativas.
+  async function contactoStart() {
+    setSheet(null)
+    const list = await getThreads().catch(() => [])
+    const arr = (Array.isArray(list) ? list : (list.threads || [])).filter((t) => t.key && t.key !== "self" && !t.espacio && !t.group && t.name)
+    setCt({ list: arr, q: "" }); setSheet("contacto")
+  }
+  async function doSendContact(nombre) {
+    setSheet(null); setCt(null)
+    const r = await sendContact(convKey, nombre, target).catch((e) => ({ error: (e && e.message) || "sin conexión con el hub" }))
+    if (r && r.error) Alert.alert("No se pudo enviar el contacto", r.error)
+    else { load(); Alert.alert("✓", `${nombre} enviado`) }
+  }
   async function doForward(destKey) {
     const it = fwd.item; const txt = (it.text || "").trim() || preview(it)
     if (!txt.trim()) return Alert.alert("Reenviar", "Ese mensaje no tiene texto para reenviar.")
@@ -602,6 +617,7 @@ export default function Conversation({ route, navigation }) {
         <TouchableOpacity onPress={trimVideo} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>🎬</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Recortar video</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Elegí el pedazo que querés mandar</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={pickSticker} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>🩷</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Sticker</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Mandá una imagen como sticker</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={pickDoc} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>📄</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Archivo</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>PDF, documentos, etc.</Text></View></TouchableOpacity>
+        <TouchableOpacity onPress={contactoStart} style={{ paddingVertical: 15, flexDirection: "row", gap: 12, alignItems: "center", borderTopWidth: 0.5, borderTopColor: theme.line }}><Text style={{ fontSize: 22 }}>👤</Text><View><Text style={{ fontSize: 16, color: theme.ink, fontWeight: "600" }}>Contacto</Text><Text style={{ fontSize: 12.5, color: theme.muted }}>Comparte los datos de alguien de tu agenda</Text></View></TouchableOpacity>
       </Sheet>
 
       <Sheet visible={sheet === "menu"} onClose={() => setSheet(null)}>
@@ -729,6 +745,21 @@ export default function Conversation({ route, navigation }) {
         <ScrollView style={{ maxHeight: 380 }}>
           {(fwd ? fwd.list.filter((t) => !fwd.q || (t.name || "").toLowerCase().includes(fwd.q.toLowerCase())) : []).slice(0, 60).map((t) => (
             <TouchableOpacity key={t.key} onPress={() => doForward(t.key)} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9 }}>
+              <Avatar name={t.name} photo={t.photo} size={38} />
+              <Text numberOfLines={1} style={{ flex: 1, fontSize: 15, color: theme.ink }}>{t.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </Sheet>
+
+      <Sheet visible={sheet === "contacto"} onClose={() => { setSheet(null); setCt(null) }}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>Enviar un contacto</Text>
+        <Text style={{ fontSize: 12.5, color: theme.muted, marginBottom: 10 }}>Se manda con sus datos (teléfono y correo) para que lo guarden en la agenda.</Text>
+        <TextInput placeholder="Buscar contacto…" placeholderTextColor={theme.muted2} onChangeText={(v) => setCt((c) => ({ ...c, q: v }))}
+          style={{ backgroundColor: theme.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, marginBottom: 10, color: theme.ink }} />
+        <ScrollView style={{ maxHeight: 380 }}>
+          {(ct ? ct.list.filter((t) => !ct.q || (t.name || "").toLowerCase().includes(ct.q.toLowerCase())) : []).slice(0, 60).map((t) => (
+            <TouchableOpacity key={t.key} onPress={() => doSendContact(t.name)} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9 }}>
               <Avatar name={t.name} photo={t.photo} size={38} />
               <Text numberOfLines={1} style={{ flex: 1, fontSize: 15, color: theme.ink }}>{t.name}</Text>
             </TouchableOpacity>

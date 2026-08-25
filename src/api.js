@@ -170,6 +170,8 @@ export const sttFile = async (fileUri, mime) => {
 export const sendAudioFile = (key, fileUri, mime, dur, t) => uploadRaw("/api/send-audio?" + qs({ key, dur, channel: t && t.channel, target: t && t.target }), fileUri, mime)
 export const sendMediaFile = (key, fileUri, mime, filename, t) => uploadRaw("/api/send-media?" + qs({ key, filename, channel: t && t.channel, target: t && t.target }), fileUri, mime)
 export const sendStickerFile = (key, fileUri, mime, t) => uploadRaw("/api/send-sticker?" + qs({ key, channel: t && t.channel, target: t && t.target }), fileUri, mime)
+// enviar un CONTACTO: el server arma el vCard con los datos que ya tiene de esa persona (no mandamos nada desde acá)
+export const sendContact = (key, contacto, t) => api("/api/send-contact", { method: "POST", body: JSON.stringify({ key, contacto, channel: t && t.channel, target: t && t.target }) })
 export const getHome = () => api("/api/home")
 export const homeAudioSource = () => mediaSource("/api/home/audio")
 export const getCalendar = (view = "dia", date = "") => api("/api/calendar?view=" + view + (date ? "&date=" + date : ""))
