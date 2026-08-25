@@ -99,6 +99,16 @@ async function api(path, opts = {}) {
   if (r.status === 401) { const e = new Error("no autorizado"); e.code = 401; throw e }
   return r.json()
 }
+// Igual que api() pero LANZA con el código HTTP puesto. La cola de envío lo necesita para distinguir un 502
+// (reintentable: el hub reinició) de un 400 (definitivo: reintentar sería un bucle infinito). Sin el código, un
+// 502 devuelve HTML de Caddy y r.json() explota sin decir qué pasó.
+async function apiCoded(path, opts = {}) {
+  const r = await fetch(BASE + path, { ...opts, headers: { "Content-Type": "application/json", ...authHeaders(), ...(opts.headers || {}) } })
+  if (r.status === 401) { const e = new Error("no autorizado"); e.code = 401; throw e }
+  const body = await r.json().catch(() => null)
+  if (r.status >= 400) { const e = new Error((body && body.error) || "HTTP " + r.status); e.code = r.status; throw e }
+  return { status: r.status, data: body }
+}
 // subida RAW (audio/media) — el server lee el body crudo; legacy uploadAsync manda los bytes del archivo tal cual.
 async function uploadRaw(path, fileUri, mime) {
   try {
@@ -137,6 +147,8 @@ export const getEmailBody = (id) => api("/api/email/body?id=" + encodeURICompone
 export const searchContent = (q) => api("/api/router-search", { method: "POST", body: JSON.stringify({ q }) })
 export const getTargets = (key) => api("/api/thread/targets?key=" + encodeURIComponent(key))
 export const sendMsg = (key, text, t, covert) => api("/api/send", { method: "POST", body: JSON.stringify({ key, text, channel: t && t.channel, target: t && t.target, covert: !!covert }) })
+// versión para la COLA: manda el msgId (el server lo reserva → un reintento tras 502 no duplica) y devuelve { status, data }
+export const sendMsgCola = (it) => apiCoded("/api/send", { method: "POST", body: JSON.stringify({ key: it.key, text: it.text, channel: it.channel, target: it.target, covert: !!it.covert, msgId: it.msgId }) })
 // modo encubierto ("El Santo"): config por-contacto + preview en vivo
 export const getCovertCfg = (key) => api("/api/covert/config?key=" + encodeURIComponent(key))
 export const setCovertCfg = (key, pass, style) => api("/api/covert/config", { method: "POST", body: JSON.stringify({ key, pass, style }) })

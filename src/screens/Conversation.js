@@ -13,6 +13,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { theme } from "../theme"
 import { useT } from "../i18n"
 import { markSeen, getThread, getThreadDelta, getThreadBefore, sendMsg, getTargets, getThreads, suggestReply, summarizeChat, correctText, sttFile, sendAudioFile, sendMediaFile, sendStickerFile, sendContact, getCovertCfg, setCovertCfg, previewCovert, getBase, summarizeMediaMsg, getAutopilotCfg, setAutopilotCfg, autopilotFeedbackMsg, getEmailBody } from "../api"
+import { encolar, suscribir, pendientesDe, nuevoMsgId, iniciar as iniciarCola, flush as flushCola } from "../outbox"
 import { loadThread, saveThread } from "../store" // cache local (SQLite): historia completa en el celular, de la red solo el delta
 import { hhmm, color, preview, htmlToText } from "../util"
 import Avatar from "../components/Avatar"
@@ -186,8 +187,10 @@ export default function Conversation({ route, navigation }) {
   }, [convKey, items, loadingOlder])
 
   // ── ENVIAR ──
+  // `extra.id` permite que la burbuja lleve el MISMO id que la cola de envío (el msgId), para poder marcarla
+  // cuando el mensaje sale o lo rechazan. Sin eso, la cola no sabría a qué burbuja corresponde.
   const optimistic = (extra) => {
-    const id = "opt-" + Date.now()
+    const id = (extra && extra.id) || "opt-" + Date.now()
     setItems((x) => [...x, { id, dir: "out", ts: Date.now(), ...extra }])
     return id
   }
@@ -195,20 +198,13 @@ export default function Conversation({ route, navigation }) {
     let t = (raw || "").trim(); if (!t) return
     if (replyTo) { const q = (replyTo.text || "").replace(/\s+/g, " ").slice(0, 160); t = `> ${replyTo.name}: ${q}\n${t}`; setReplyTo(null) }
     setText("")
-    const id = optimistic({ text: t, ...(covertOn ? { covert: { text: t, style: covertStyle } } : {}) }) // covert: burbuja muestra tu texto real + badge
+    // A LA COLA, no directo al server. Antes, un 502 o un bache de señal borraba la burbuja y te devolvía el texto
+    // al compositor: en el celular eso es "creí que le avisé". Ahora la burbuja se queda con 🕐 y se reintenta
+    // hasta que salga; el msgId evita que un reintento mande el mensaje dos veces.
+    const msgId = nuevoMsgId()
+    const id = optimistic({ id: msgId, text: t, pendiente: true, ...(covertOn ? { covert: { text: t, style: covertStyle } } : {}) }) // covert: burbuja muestra tu texto real + badge
     try { Haptics.selectionAsync() } catch {}
-    // api() LANZA si no hay red o si el hub responde 401. Sin try/catch la promesa quedaba rechazada sin manejar y la
-    // burbuja verde se quedaba con doble check para siempre, sobre un mensaje que nunca salió. En el subte eso es
-    // "creí que le avisé". Un fallo se dice, se saca la burbuja y el texto vuelve al compositor para reintentar.
-    let r = null
-    try { r = await sendMsg(convKey, t, target, covertOn) } catch (e) { r = { error: (e && e.message) || "sin conexión con el hub" } }
-    if (!r || r.error) {
-      setItems((x) => x.filter((m) => m.id !== id))
-      setText((cur) => cur || raw)
-      Alert.alert("No se pudo enviar", (r && r.error) || "Sin conexión con el hub. Revisá tu red e intentá de nuevo.")
-      return
-    }
-    setTimeout(load, 700)
+    encolar({ msgId: id, key: convKey, text: t, channel: target && target.channel, target: target && target.target, covert: !!covertOn, ts: Date.now() })
   }
 
   // ── MODO ENCUBIERTO ("El Santo") ──
@@ -258,6 +254,27 @@ export default function Conversation({ route, navigation }) {
   const onSend = () => { const t = text.trim(); if (!t) return; if (correctOn) showSendOptions(t); else { setText(""); doSend(t) } }
   const toggleCorrect = () => { setCorrectOn((v) => { const nv = !v; AsyncStorage.setItem("pipe_correct", nv ? "1" : "0").catch(() => {}); return nv }) }
   useEffect(() => { AsyncStorage.getItem("pipe_correct").then((v) => { if (v === "0") setCorrectOn(false) }).catch(() => {}) }, [])
+
+  // COLA DE ENVÍO: arranca (recupera lo que quedó de la sesión anterior) y escucha. "enviado" recarga el hilo para
+  // ver el mensaje real; "fallo" saca la burbuja y avisa CON EL MOTIVO, devolviendo el texto al compositor.
+  useEffect(() => {
+    void iniciarCola()
+    const off = suscribir((ev) => {
+      if (ev.tipo === "fallo") {
+        setItems((x) => x.filter((m) => m.id !== ev.item.msgId))
+        if (ev.item.key === convKey) {
+          setText((cur) => cur || ev.item.text)
+          Alert.alert("No se pudo enviar", ev.motivo)
+        }
+        return
+      }
+      if (ev.tipo === "enviado" && ev.item.key === convKey) { setTimeout(load, 500); return }
+      // "cambio": repintamos los 🕐 de ESTE hilo por si algún intento quedó esperando
+      setItems((x) => x.map((m) => (pendientesDe(convKey).some((p) => p.msgId === m.id) ? { ...m, pendiente: true } : m)))
+    })
+    void flushCola()
+    return off
+  }, [convKey, load])
 
   // ── OPCIONES DE IA (corregido/tal cual/otra) — usado por el mic IA ──
   async function showSendOptions(txt) {
@@ -493,7 +510,7 @@ export default function Conversation({ route, navigation }) {
             </View>
           ) : (showText ? <LinkedText text={item.text} style={{ fontSize: 15.5, color: theme.ink, lineHeight: 20, marginTop: hasMedia ? 5 : 0, paddingHorizontal: hasMedia ? 5 : 0 }} /> : null)}
           {out && item.auto ? <TouchableOpacity onPress={() => { setApFb({ id: item.id, original: item.text || "" }); setApBad(false); setApCorr(""); setSheet("apfb") }} hitSlop={6}><Text style={{ fontSize: 10.5, color: theme.accent, marginTop: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>🤖 lo respondió el piloto · calificar</Text></TouchableOpacity> : null}
-          <Text style={{ fontSize: 10, color: out ? "#6b9a80" : theme.muted2, alignSelf: "flex-end", marginTop: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{hhmm(item.ts)}{out ? " ✓✓" : ""}</Text>
+          <Text style={{ fontSize: 10, color: out ? "#6b9a80" : theme.muted2, alignSelf: "flex-end", marginTop: 2, paddingHorizontal: hasMedia ? 5 : 0 }}>{hhmm(item.ts)}{out ? (item.pendiente ? " 🕐" : item.fallo ? " ⚠️" : " ✓✓") : ""}</Text>
         </View>
       </Pressable>
     )
