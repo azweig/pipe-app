@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getThreads, searchThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent, mergeContacts, getAccounts,
+import { getProximaReunion, getThreads, searchThreads, getGroups, setArchive, setSilence, saveEspacio, searchContent, mergeContacts, getAccounts,
   secretOn, isSecretPinSet, onSecretChange, secretLock, getSecretStatus, secretSetup, secretUnlock, getSecretState, secretSetWa, secretSetAccount, nuevaConversacion, canalesNuevaConv } from "../api"
 import { ago, preview, espIcon, bucketCat } from "../util"
 // (ago se usa también en las tarjetas de resultados de la búsqueda contextual)
@@ -46,6 +46,15 @@ export default function Inbox({ navigation }) {
   const [canal, setCanal] = useState("")
   const [newName, setNewName] = useState("")
   const [newIcon, setNewIcon] = useState("")
+  // PRÓXIMA REUNIÓN: lo que uno quiere saber sin abrir la agenda es cuánto le falta. Se refresca solo cada minuto,
+  // si no la cuenta regresiva se queda congelada mientras mirás la bandeja.
+  const [proxReu, setProxReu] = useState(null)
+  useEffect(() => {
+    const traer = () => getProximaReunion().then((r) => setProxReu(r && !r.none ? r : null)).catch(() => {})
+    traer()
+    const t = setInterval(traer, 60000)
+    return () => clearInterval(t)
+  }, [])
   const [espErr, setEspErr] = useState("")
   // MODO SELECCIÓN: elegir 2+ contactos y UNIRLOS (dedupe la misma persona partida en varios hilos). El 1ro seleccionado (en orden de lista) es el que se CONSERVA.
   const [selMode, setSelMode] = useState(false)
@@ -437,7 +446,21 @@ export default function Inbox({ navigation }) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={selMode ? { paddingBottom: 88 } : undefined}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.accent} colors={[theme.accent]} />}
-        ListHeaderComponent={aiRes ? <AiCard /> : null}
+        ListHeaderComponent={
+          <View>
+            {proxReu ? (
+              <TouchableOpacity activeOpacity={0.6} onPress={() => navigation.navigate("Calendar")}
+                style={{ flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 14, marginTop: 8, marginBottom: 4,
+                  paddingVertical: 8, paddingHorizontal: 11, borderRadius: 10, backgroundColor: theme.bg,
+                  borderWidth: 1, borderColor: (proxReu.enCurso || proxReu.faltanMin <= 30) ? theme.accent : theme.line }}>
+                <Text style={{ fontSize: 14 }}>🗓️</Text>
+                <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, color: theme.ink }}>{proxReu.title}</Text>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: theme.accent }}>{proxReu.enCurso ? "ahora" : proxReu.cuando}</Text>
+              </TouchableOpacity>
+            ) : null}
+            {aiRes ? <AiCard /> : null}
+          </View>
+        }
         ListEmptyComponent={<Text style={{ textAlign: "center", color: theme.muted, marginTop: 40 }}>{q ? t("nothing_matches") : t("no_convs")}</Text>}
       />
 

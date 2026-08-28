@@ -253,6 +253,8 @@ export const changePinReq = (b) => api("/api/auth/change-pin", { method: "POST",
 export const getUnread = () => api("/api/unread")
 export const getGroups = () => api("/api/groups")
 export const getEspacio = (id) => api("/api/espacio/view?id=" + encodeURIComponent(id))
+// cuánto falta para la próxima reunión (para no tener que abrir la agenda)
+export const getProximaReunion = () => api("/api/next-meeting")
 export const getEspacios = () => api("/api/espacios")
 export const saveEspacio = (e) => api("/api/espacio", { method: "POST", body: JSON.stringify(e) }) // crear (sin id) o renombrar/actualizar (con id)
 export const deleteEspacio = (id) => api("/api/espacio/delete", { method: "POST", body: JSON.stringify({ id }) })
