@@ -3,7 +3,7 @@
     "name": "Pipe Nativo",
     "slug": "pipe-native",
     "scheme": "pipe",
-    "version": "1.2.6",
+    "version": "1.2.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

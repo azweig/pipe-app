@@ -322,6 +322,7 @@ export default function Inbox({ navigation }) {
           </View>
           <View style={{ flex: 1, borderBottomWidth: 0.5, borderBottomColor: theme.line, paddingVertical: 11, paddingRight: 16 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              {item.importante ? <Text style={{ color: theme.accent, fontSize: 11, marginRight: 3 }}>✦</Text> : null}
               <Text numberOfLines={1} style={{ fontWeight: "600", fontSize: 16, color: theme.ink, flex: 1, marginRight: 8 }}>{item.name}</Text>
               <Text style={{ color: theme.muted2, fontSize: 12 }}>{ago(item.ts)}</Text>
             </View>
