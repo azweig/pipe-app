@@ -144,7 +144,7 @@ export const getThreadBefore = (key, before) => api("/api/thread?key=" + encodeU
 export const getEmailBody = (id) => api("/api/email/body?id=" + encodeURIComponent(id))
 // buscador CONTEXTUAL / con IA: router de facetas (⚡ 0 tokens) con fallback RAG (🧠). Busca dentro del CUERPO de los mensajes, no solo por nombre.
 // → { mode:"facets"|"rag", type:"find"|…, engine, answer, results:[{key,name,ts,text,media,mediaType,filename}], threads:[{key,name,summary,path}], matches, ragMode, degraded }
-export const searchContent = (q) => api("/api/router-search", { method: "POST", body: JSON.stringify({ q }) })
+export const searchContent = (q) => api("/api/router-search", { method: "POST", body: JSON.stringify({ q, via: "móvil" }) })
 export const getTargets = (key) => api("/api/thread/targets?key=" + encodeURIComponent(key))
 export const sendMsg = (key, text, t, covert) => api("/api/send", { method: "POST", body: JSON.stringify({ key, text, channel: t && t.channel, target: t && t.target, covert: !!covert }) })
 // versión para la COLA: manda el msgId (el server lo reserva → un reintento tras 502 no duplica) y devuelve { status, data }
