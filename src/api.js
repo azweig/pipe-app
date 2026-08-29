@@ -190,6 +190,11 @@ export const getCalendar = (view = "dia", date = "") => api("/api/calendar?view=
 export const getMeeting = (id) => api("/api/meeting?id=" + encodeURIComponent(id))
 export const actionDone = (kind, id) => api("/api/action/done", { method: "POST", body: JSON.stringify({ kind, id }) })
 export const askBrain = (q) => api("/api/ask", { method: "POST", body: JSON.stringify({ q }) })
+// JARVIS con memoria: la charla vive en el hub, así es la MISMA en la web, el escritorio, el celular y lo que le
+// preguntás por WhatsApp. Y usa el buscador completo (correos, adjuntos, agenda), no solo el RAG de mensajes.
+export const jarvisHistorial = () => api("/api/jarvis?limit=80")
+export const jarvisPreguntar = (q) => api("/api/jarvis", { method: "POST", body: JSON.stringify({ q, via: "movil" }) })
+export const jarvisLimpiar = () => api("/api/jarvis/clear", { method: "POST", body: "{}" })
 export const replyDraft = (name, key) => api("/api/reply", { method: "POST", body: JSON.stringify({ name, key }) })
 export const markSeen = (key, ts) => api("/api/thread/seen", { method: "POST", body: JSON.stringify({ key, ts }) })
 export const scheduleDelete = (payload) => api("/api/schedule/delete", { method: "POST", body: JSON.stringify(payload) })

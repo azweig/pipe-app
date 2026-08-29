@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio"
 import { theme } from "../theme"
 import { useT } from "../i18n"
-import { getHome, homeAudioSource, actionDone, askBrain, replyDraft, markSeen, getOnboarding, getBase } from "../api"
+import { getHome, homeAudioSource, actionDone, askBrain, jarvisPreguntar, replyDraft, markSeen, getOnboarding, getBase } from "../api"
 import Avatar from "../components/Avatar"
 
 const GREET_KEY = { manana: "good_morning", "mañana": "good_morning", tarde: "good_afternoon", noche: "good_evening", madrugada: "good_evening" }
@@ -59,7 +59,7 @@ export default function Home({ navigation }) {
   useEffect(() => { load(false); const unsub = navigation.addListener("focus", () => load(false)); return unsub }, [load, navigation])
 
   const hide = (k) => setHidden((h) => ({ ...h, [k]: true }))
-  const doAsk = async () => { const q = ask.trim(); if (!q) return; setAsking(true); setAnswer(null); const r = await askBrain(q).catch(() => null); setAsking(false); setAnswer((r && (r.answer || r.text)) || "No pude responder eso ahora."); setAsk("") }
+  const doAsk = async () => { const q = ask.trim(); if (!q) return; setAsking(true); setAnswer(null); const r = await jarvisPreguntar(q).catch(() => null); setAsking(false); setAnswer((r && (r.answer || r.text)) || "No pude responder eso ahora."); setAsk("") }
   const openConv = (w) => navigation.navigate("Conversation", { convKey: w.key, name: w.name, photo: w.photo })
   const draftFor = async (w) => { const r = await replyDraft(w.name, w.key).catch(() => null); navigation.navigate("Conversation", { convKey: w.key, name: w.name, photo: w.photo, draft: r && (r.draft || r.text) }) }
   const waitDone = (w) => { hide("w:" + w.key); markSeen(w.key, Date.now()).catch(() => {}) }
