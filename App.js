@@ -22,6 +22,7 @@ import Calendar from "./src/screens/Calendar"
 import MeetingDetail from "./src/screens/MeetingDetail"
 import Radar from "./src/screens/Radar"
 import Notas from "./src/screens/Notas"
+import Correo from "./src/screens/Correo"
 import ContactProfile from "./src/screens/ContactProfile"
 import ShareTo from "./src/screens/ShareTo"
 import Settings from "./src/screens/Settings"
@@ -61,6 +62,7 @@ function MainTabs() {
       }}
     >
       <Tab.Screen name="Mensajes" component={Inbox} options={{ tabBarLabel: t("messages"), tabBarIcon: tabIcon("💬") }} />
+      <Tab.Screen name="Correo" component={Correo} options={{ tabBarLabel: "Correo", tabBarIcon: tabIcon("📧") }} />
       <Tab.Screen name="Calendario" component={Calendar} options={{ tabBarLabel: t("calendar"), tabBarIcon: tabIcon("📅") }} />
       <Tab.Screen name="Inicio" component={Home} options={{ tabBarLabel: t("home"), tabBarIcon: tabIcon("🏠") }} />
       <Tab.Screen name="Radar" component={Radar} options={{ tabBarLabel: t("radar"), tabBarIcon: tabIcon("✨") }} />
