@@ -19,6 +19,7 @@ import { hhmm, color, preview, htmlToText } from "../util"
 import Avatar from "../components/Avatar"
 import MediaBubble from "../components/MediaBubble"
 import DocViewer from "../components/DocViewer" // visor de documentos: también para los adjuntos de correo
+import { docAbrible } from "../components/MediaBubble"
 import Sheet from "../components/Sheet"
 import { mergeItems } from "../mergeItems" // merge/dedup optimista PURO (extraído a su propio módulo → testeable sin mocks nativos)
 export { mergeItems }
@@ -739,7 +740,7 @@ export default function Conversation({ route, navigation }) {
             {email.atts.map((a, i) => {
               // Un PDF es un PDF venga de un chat o de un correo. Antes esto era texto muerto: ni siquiera se podía tocar.
               const nom = a.name || "archivo"
-              const abrible = !!a.cas && /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf)$/i.test(nom)
+              const abrible = !!a.cas && docAbrible(nom, a.cas)
               const ico = /\.(xlsx?|ods|csv)$/i.test(nom) ? "📊" : /\.(docx?|odt|rtf)$/i.test(nom) ? "📝" : /\.pptx?$/i.test(nom) ? "📽" : "📄"
               return (
                 <TouchableOpacity key={i} activeOpacity={abrible ? 0.7 : 1} onPress={abrible ? () => setAttDoc({ media: a.cas, filename: nom }) : undefined}

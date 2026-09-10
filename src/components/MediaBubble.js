@@ -58,7 +58,18 @@ export default function MediaBubble({ item, out }) {
   return <DocMsg item={item} />
 }
 
-const DOC_ABRIBLE = /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf)$/i
+// ¿Se puede mostrar adentro? NO alcanza con la extensión del filename: hay documentos que llegaron SIN nombre y
+// guardados como ".bin" —408 de 7.435 medidos en la base—, y entre ellos hay planillas y manuales reales. Ante un
+// tipo DESCONOCIDO se deja pasar: el servidor lo abre por su contenido y, si de verdad no se puede, el visor lo dice.
+export const docExt = (s) => (String(s || "").match(/\.([a-z0-9]{2,5})$/i)?.[1] || "").toLowerCase()
+const DOC_VE = /^(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf|html?)$/
+const DOC_NO = /^(zip|rar|7z|tar|gz|bz2|exe|apk|dmg|iso|mp3|mp4|mov|avi|mkv|webm|jpe?g|png|gif|webp|ogg|opus|m4a|wav|aac)$/
+export const docAbrible = (filename, media) => {
+  const a = docExt(filename), b = docExt(media)
+  if (DOC_VE.test(a) || DOC_VE.test(b)) return true
+  if (DOC_NO.test(a) || DOC_NO.test(b)) return false
+  return true
+}
 const docIcono = (n) => /\.(xlsx?|ods|csv)$/i.test(n) ? "📊" : /\.(docx?|odt|rtf)$/i.test(n) ? "📝" : /\.pptx?$/i.test(n) ? "📽" : "📄"
 
 // DOCUMENTO — hasta acá era un cartelito muerto que ni siquiera se podía tocar: el peor de las tres apps. Ahora abre
@@ -67,7 +78,7 @@ function DocMsg({ item }) {
   const [ver, setVer] = useState(false)
   const [resumen, setResumen] = useState(item.summary || "")
   const nombre = item.filename || "Documento"
-  const abrible = DOC_ABRIBLE.test(nombre) || DOC_ABRIBLE.test(item.media || "")
+  const abrible = docAbrible(nombre, item.media)
   return (
     <View>
       <TouchableOpacity activeOpacity={abrible ? 0.7 : 1} onPress={abrible ? () => setVer(true) : undefined}
