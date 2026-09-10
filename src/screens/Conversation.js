@@ -18,6 +18,7 @@ import { loadThread, saveThread } from "../store" // cache local (SQLite): histo
 import { hhmm, color, preview, htmlToText } from "../util"
 import Avatar from "../components/Avatar"
 import MediaBubble from "../components/MediaBubble"
+import DocViewer from "../components/DocViewer" // visor de documentos: también para los adjuntos de correo
 import Sheet from "../components/Sheet"
 import { mergeItems } from "../mergeItems" // merge/dedup optimista PURO (extraído a su propio módulo → testeable sin mocks nativos)
 export { mergeItems }
@@ -95,6 +96,7 @@ export default function Conversation({ route, navigation }) {
   const [correctOn, setCorrectOn] = useState(true) // #2: corrección IA al enviar ON por defecto; se puede apagar (botón ✨) y se recuerda
   const [summary, setSummary] = useState(null)
   const [email, setEmail] = useState(null) // ✉️ email/transcripción abierto: { item, loading, text, atts }
+  const [attDoc, setAttDoc] = useState(null) // 📄 adjunto de correo abierto en el visor de documentos
   const [busy, setBusy] = useState(null) // texto de "cargando"
   const [rec, setRec] = useState(null) // 'voice' | 'ai'
   const [recDur, setRecDur] = useState(0)
@@ -734,15 +736,26 @@ export default function Conversation({ route, navigation }) {
         ) : null}
         {email && email.atts.length ? (
           <View style={{ marginBottom: 12 }}>
-            {email.atts.map((a, i) => (
-              <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6 }}>
-                <Text style={{ fontSize: 18 }}>📄</Text>
-                <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, color: theme.ink }}>{a.name || "archivo"}</Text>
-                <Text style={{ fontSize: 11, color: theme.muted2 }}>{a.size ? Math.max(1, Math.round(a.size / 1024)) + " KB" : ""}</Text>
-              </View>
-            ))}
+            {email.atts.map((a, i) => {
+              // Un PDF es un PDF venga de un chat o de un correo. Antes esto era texto muerto: ni siquiera se podía tocar.
+              const nom = a.name || "archivo"
+              const abrible = !!a.cas && /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf)$/i.test(nom)
+              const ico = /\.(xlsx?|ods|csv)$/i.test(nom) ? "📊" : /\.(docx?|odt|rtf)$/i.test(nom) ? "📝" : /\.pptx?$/i.test(nom) ? "📽" : "📄"
+              return (
+                <TouchableOpacity key={i} activeOpacity={abrible ? 0.7 : 1} onPress={abrible ? () => setAttDoc({ media: a.cas, filename: nom }) : undefined}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6 }}>
+                  <Text style={{ fontSize: 18 }}>{ico}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={{ fontSize: 13.5, color: theme.ink }}>{nom}</Text>
+                    {abrible ? <Text style={{ fontSize: 11, color: theme.accent }}>Ver adentro</Text> : null}
+                  </View>
+                  <Text style={{ fontSize: 11, color: theme.muted2 }}>{a.size ? Math.max(1, Math.round(a.size / 1024)) + " KB" : ""}</Text>
+                </TouchableOpacity>
+              )
+            })}
           </View>
         ) : null}
+        <DocViewer visible={!!attDoc} dref={attDoc} onClose={() => setAttDoc(null)} />
         {email && email.loading ? <ActivityIndicator color={theme.accent} style={{ marginVertical: 24 }} /> : null}
         <ScrollView style={{ maxHeight: 420 }}>
           <LinkedText text={email ? email.text || "(sin contenido)" : ""} style={{ fontSize: 15, color: theme.ink, lineHeight: 22 }} />

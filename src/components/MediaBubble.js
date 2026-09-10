@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity } from "react-native"
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio"
 import { useVideoPlayer, VideoView } from "expo-video"
 import { mediaSource } from "../api"
+import DocViewer from "./DocViewer"
 import { theme } from "../theme"
 
 const fmtDur = (s) => { if (!s || !isFinite(s)) return ""; s = Math.round(s); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") }
@@ -54,13 +55,31 @@ export default function MediaBubble({ item, out }) {
   if (item.mediaType === "video" || item.mediaType === "gif") return <VideoMsg source={src} />
   if (item.mediaType === "audio") return <AudioMsg source={src} out={out} summary={item.audioSummary ? item.summary : null} />
   // documento u otro archivo
+  return <DocMsg item={item} />
+}
+
+const DOC_ABRIBLE = /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf)$/i
+const docIcono = (n) => /\.(xlsx?|ods|csv)$/i.test(n) ? "📊" : /\.(docx?|odt|rtf)$/i.test(n) ? "📝" : /\.pptx?$/i.test(n) ? "📽" : "📄"
+
+// DOCUMENTO — hasta acá era un cartelito muerto que ni siquiera se podía tocar: el peor de las tres apps. Ahora abre
+// el visor con las páginas que convirtió el hub, y muestra el resumen debajo igual que una nota de voz.
+function DocMsg({ item }) {
+  const [ver, setVer] = useState(false)
+  const [resumen, setResumen] = useState(item.summary || "")
+  const nombre = item.filename || "Documento"
+  const abrible = DOC_ABRIBLE.test(nombre) || DOC_ABRIBLE.test(item.media || "")
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 9, minWidth: 180 }}>
-      <Text style={{ fontSize: 24 }}>📄</Text>
-      <View style={{ flex: 1 }}>
-        <Text numberOfLines={2} style={{ fontSize: 14, fontWeight: "600", color: theme.ink }}>{item.filename || "Documento"}</Text>
-        <Text style={{ fontSize: 11, color: theme.muted2 }}>Archivo</Text>
-      </View>
+    <View>
+      <TouchableOpacity activeOpacity={abrible ? 0.7 : 1} onPress={abrible ? () => setVer(true) : undefined}
+        style={{ flexDirection: "row", alignItems: "center", gap: 9, minWidth: 180 }}>
+        <Text style={{ fontSize: 24 }}>{docIcono(nombre)}</Text>
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={2} style={{ fontSize: 14, fontWeight: "600", color: theme.ink }}>{nombre}</Text>
+          <Text style={{ fontSize: 11, color: abrible ? theme.accent : theme.muted2 }}>{abrible ? "Ver adentro" : "Archivo"}</Text>
+        </View>
+      </TouchableOpacity>
+      {resumen ? <Text style={{ fontSize: 13, color: theme.ink, marginTop: 6, fontStyle: "italic" }}>“{resumen}”</Text> : null}
+      {abrible ? <DocViewer visible={ver} dref={{ id: item.id, media: item.media, filename: nombre }} onClose={() => setVer(false)} onSummary={(_, s) => setResumen(s)} /> : null}
     </View>
   )
 }

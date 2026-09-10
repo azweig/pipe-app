@@ -155,6 +155,13 @@ export const setCovertCfg = (key, pass, style) => api("/api/covert/config", { me
 export const previewCovert = (text, pass, style) => api("/api/covert/preview", { method: "POST", body: JSON.stringify({ text, pass, style }) })
 // #5: transcribir + resumir un video/audio/imagen (traducido al español)
 export const summarizeMediaMsg = (id) => api("/api/media/summarize", { method: "POST", body: JSON.stringify({ id }) })
+// 📄 VISOR DE DOCUMENTOS (pdf/docx/xlsx) — el hub convierte a páginas y acá sólo se muestran, como imágenes.
+// Por eso mobile no necesita WebView ni un módulo nativo de PDF: no rompe Expo Go y es la misma API que web/desktop.
+// La referencia es `id` para un adjunto de chat (que es un mensaje) o `media`+`filename` para uno de correo (que no).
+const _docQs = (ref) => new URLSearchParams(Object.entries(ref || {}).filter(([, v]) => !!v)).toString()
+export const getDoc = (ref) => api("/api/doc?" + _docQs(ref))
+export const getDocTexto = (ref) => api("/api/doc/text?" + _docQs(ref))
+export const summarizeDoc = (ref) => api("/api/doc/summarize", { method: "POST", body: JSON.stringify(ref || {}) })
 // 🏖️ piloto automático por contacto + feedback (mismo backend que web/desktop)
 export const getAutopilotCfg = (key) => api("/api/autopilot/config?key=" + encodeURIComponent(key))
 export const setAutopilotCfg = (key, enabled, maxPerDay = 0) => api("/api/autopilot/config", { method: "POST", body: JSON.stringify({ key, enabled, maxPerDay }) })
