@@ -3,7 +3,7 @@
     "name": "Pipe Nativo",
     "slug": "pipe-native",
     "scheme": "pipe",
-    "version": "1.3.0",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "one.pipe.app",
-      "versionCode": 26,
+      "versionCode": 32,
       "permissions": [
         "RECORD_AUDIO",
         "CAMERA",
