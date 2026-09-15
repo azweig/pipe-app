@@ -222,6 +222,7 @@ export const setCategory = (key, category) => api("/api/contact/category", { met
 export const threadMedia = (key) => api("/api/thread/media?key=" + encodeURIComponent(key))
 // ── Ajustes / Cuenta ──
 export const getHubConfig = () => api("/api/hub-config")
+export const saveHubConfig = (b) => api("/api/hub-config/save", { method: "POST", body: JSON.stringify(b) })
 export const getAccounts = () => api("/api/accounts")
 export const addEmail = (b) => api("/api/accounts/email", { method: "POST", body: JSON.stringify(b) })
 export const removeEmail = (label) => api("/api/accounts/email/remove", { method: "POST", body: JSON.stringify({ label }) })

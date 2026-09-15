@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StatusBar, Image, Linking } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getBase, getHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getChannelsCatalog, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa, getSignatures, saveSignature, getAssistant, setAssistant, tryAssistant } from "../api"
+import { getBase, getHubConfig, saveHubConfig, getAccounts, addEmail, removeEmail, getLlmConfig, testLlm, saveLlm, getVoices, setVoice, getNotifPrefs, saveNotifPrefs, getAuthStatus, changePinReq, logout, getAutopilotPolicy, setAutopilotPolicy, getApifyAccounts, addApifyAccount, removeApifyAccount, getCouncil, setCouncil as apiSetCouncil, getTrainCard, autopilotFeedbackMsg, getVoiceProfile, buildVoiceProfile, getChannelsCatalog, getStatus, getWaStatus, getMatrixLogins, matrixLink, matrixStatus, matrixLinkToken, matrixQrSource, telegramStatus, telegramStart, telegramCode, telegramPassword, telegramConnected, getIntegrations, setSlack, removeSlack, setSignal, removeSignal, secretOn, onSecretChange, getSecretState, secretSetWa, getSignatures, saveSignature, getAssistant, setAssistant, tryAssistant } from "../api"
 import { useT, getLang, setLang } from "../i18n"
 import Sheet from "../components/Sheet"
 import LocalAICard from "../components/LocalAI"
@@ -44,6 +44,39 @@ const Row = ({ children, onPress, last }) => {
 const INP = { backgroundColor: theme.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: theme.ink, marginBottom: 10 }
 const SHEET_TITLE = { fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 6 }
 const PRIMARY = { backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 13, alignItems: "center" }
+
+// ⏰ CUÁNDO SE REARMA EL RESUMEN DE LA HOME. Dos corridas al día en vez de un intervalo: el trato con el usuario
+// pasa a ser "entro a la mañana y está lo del día" en vez de "se actualizó en algún momento de la última media hora".
+// El server normaliza y descarta lo inválido, así que acá se manda el texto tal cual se tipeó.
+function HomeHorasCard({ hub, onSaved }) {
+  const [v, setV] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState("")
+  const guardadas = (hub && hub.homeHoras) || [4, 16]
+  useEffect(() => { setV(guardadas.map((h) => String(h).padStart(2, "0") + ":00").join(", ")) }, [hub])
+  const save = async () => {
+    setBusy(true); setMsg("")
+    const r = await saveHubConfig({ homeHoras: v }).catch(() => null)
+    setBusy(false)
+    if (r && r.ok) { onSaved && onSaved(r.config); setMsg("Guardado ✓") } else setMsg("No se pudo guardar")
+  }
+  return (
+    <Card title="⏰ Resumen de la Home">
+      <View style={{ paddingHorizontal: 14, paddingTop: 11 }}>
+        <Text style={{ fontSize: 12.5, color: theme.muted, lineHeight: 17 }}>
+          A qué horas se rearma "Te deben una respuesta": marca lo que ya contestaste y suma lo nuevo.
+          Hora de tu zona, separadas por coma.
+        </Text>
+        <TextInput value={v} onChangeText={setV} placeholder="04:00, 16:00" placeholderTextColor={theme.muted2}
+          keyboardType="numbers-and-punctuation" style={{ ...INP, marginTop: 10 }} />
+        <TouchableOpacity onPress={save} disabled={busy} style={{ ...PRIMARY, marginBottom: 12 }}>
+          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14.5 }}>{busy ? "Guardando…" : "Guardar"}</Text>
+        </TouchableOpacity>
+        {msg ? <Text style={{ fontSize: 12.5, color: theme.muted, marginTop: -6, marginBottom: 10 }}>{msg}</Text> : null}
+      </View>
+    </Card>
+  )
+}
 
 // ════════════ MENSAJERÍA / CANALES ════════════
 // Hoja de vinculación por el bridge Matrix (WhatsApp/Instagram/Facebook/LinkedIn): teléfono→código o QR, con poll cada ~3s.
@@ -616,6 +649,8 @@ export default function Settings({ navigation }) {
           <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: theme.accent, justifyContent: "center", alignItems: "center" }}><Text style={{ color: "#fff", fontWeight: "800", fontSize: 20 }}>{(hub.ownerFirst || hub.ownerName || "P")[0]}</Text></View>
           <View><Text style={{ fontSize: 17, fontWeight: "800", color: theme.ink }}>{hub.ownerName || "Mi hub"}</Text><Text style={{ color: theme.muted }}>{hub.company || hub.domain || "pipe.one"}</Text></View>
         </View>
+
+        <HomeHorasCard hub={hub} onSaved={setHub} />
 
         <Card title={t("language")}>
           <Row onPress={() => setLang("es")}><Text style={{ flex: 1, fontSize: 15, color: theme.ink }}>🇪🇸 Español</Text>{getLang() === "es" ? <Text style={{ color: theme.accent, fontWeight: "800" }}>✓</Text> : null}</Row>

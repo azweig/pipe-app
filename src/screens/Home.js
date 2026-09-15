@@ -9,6 +9,13 @@ import Avatar from "../components/Avatar"
 
 const GREET_KEY = { manana: "good_morning", "mañana": "good_morning", tarde: "good_afternoon", noche: "good_evening", madrugada: "good_evening" }
 const TIPO_ICON = { PLATA: "💰", PLAZO: "⏳", PERSONA: "👤", OTRO: "·" }
+// "hoy 04:00" / "ayer 16:00". El resumen corre a una hora que el usuario configuró: tiene que poder verificarla.
+const horaCorta = (ts) => {
+  const f = new Date(ts), hoy = new Date()
+  const dd = Math.round((new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()) - new Date(f.getFullYear(), f.getMonth(), f.getDate())) / 86400000)
+  const hm = String(f.getHours()).padStart(2, "0") + ":" + String(f.getMinutes()).padStart(2, "0")
+  return (dd === 0 ? "hoy" : dd === 1 ? "ayer" : dd === -1 ? "mañana" : f.toLocaleDateString("es", { weekday: "short" })) + " " + hm
+}
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`
 
 // audio del resumen (TTS) — expo-audio con el header de auth
@@ -145,6 +152,7 @@ export default function Home({ navigation }) {
             </Text>
           ) : null}
           {R.fuente === "reglas" ? <Text style={{ fontSize: 11.5, color: theme.muted2, marginTop: 6 }}>Ordenado por reglas — el resumen con IA se está generando.</Text> : null}
+          {R.ts ? <Text style={{ fontSize: 11.5, color: theme.muted2, marginTop: 6 }}>Actualizado {horaCorta(R.ts)}{R.proxima ? ` · próximo ${horaCorta(R.proxima)}` : ""}</Text> : null}
         </View>
       ) : null}
 
