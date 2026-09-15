@@ -8,6 +8,7 @@ import { getHome, homeAudioSource, actionDone, askBrain, jarvisPreguntar, replyD
 import Avatar from "../components/Avatar"
 
 const GREET_KEY = { manana: "good_morning", "mañana": "good_morning", tarde: "good_afternoon", noche: "good_evening", madrugada: "good_evening" }
+const TIPO_ICON = { PLATA: "💰", PLAZO: "⏳", PERSONA: "👤", OTRO: "·" }
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`
 
 // audio del resumen (TTS) — expo-audio con el header de auth
@@ -67,6 +68,7 @@ export default function Home({ navigation }) {
 
   if (!d) return <View style={{ flex: 1, backgroundColor: theme.bg, justifyContent: "center", paddingTop: insets.top }}><ActivityIndicator color={theme.accent} /></View>
   const b = d.brief || {}, kpis = d.kpis || [], agenda = d.agenda || [], news = d.news || [], coach = d.coach
+  const R = d.resumen || {}, Racc = R.acciones || []
   const waiting = (d.waiting || []).filter((w) => !hidden["w:" + w.key])
   const calls = d.calls || [], objetivos = d.objetivos || []
   const todos = (d.todos || []).filter((t) => !hidden["a:" + t.id])
@@ -116,6 +118,35 @@ export default function Home({ navigation }) {
       </View>
       {asking ? <View style={{ ...card, marginTop: 8, flexDirection: "row", gap: 8, alignItems: "center" }}><ActivityIndicator color={theme.accent} size="small" /><Text style={{ color: theme.muted }}>Pensando…</Text></View> : null}
       {answer ? <View style={{ ...card, marginTop: 8 }}><Text style={{ color: theme.ink, fontSize: 14.5, lineHeight: 21 }}>{answer}</Text></View> : null}
+
+      {/* Te deben una respuesta — la selección la hace el server con reglas (home-pendientes) y el modelo sólo redacta.
+          Va ARRIBA del brief: es lo único de la Home que tiene consecuencia si no lo mirás hoy. */}
+      {Racc.length ? (
+        <View style={{ marginTop: 14, ...card, padding: 15 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: 9 }}>
+            <Text style={{ fontSize: 11.5, fontWeight: "800", color: theme.ink, letterSpacing: 0.3 }}>TE DEBEN UNA RESPUESTA</Text>
+            <Text style={{ fontSize: 11.5, color: theme.muted2 }}>{(R.n && R.n.pend) || 0} pend · {(R.n && R.n.cerrados) || 0} cerrados</Text>
+          </View>
+          {Racc.map((a, i) => {
+            const it = (R.items || [])[i] || {}
+            const ic = TIPO_ICON[it.tipo] || TIPO_ICON.OTRO
+            return (
+              <TouchableOpacity key={i} activeOpacity={it.thread ? 0.6 : 1} disabled={!it.thread}
+                onPress={() => it.thread && navigation.navigate("Conversation", { convKey: it.thread, name: it.quien || "" })}
+                style={{ flexDirection: "row", gap: 9, alignItems: "flex-start", paddingVertical: 7, borderTopWidth: i ? 1 : 0, borderTopColor: theme.bg }}>
+                <Text style={{ fontSize: 15, lineHeight: 20 }}>{ic}</Text>
+                <Text style={{ flex: 1, fontSize: 14, lineHeight: 20, color: theme.ink }}>{a}</Text>
+              </TouchableOpacity>
+            )
+          })}
+          {(R.cerrados || []).length ? (
+            <Text style={{ fontSize: 12, color: theme.muted, marginTop: 10, paddingTop: 9, borderTopWidth: 1, borderTopColor: theme.bg }}>
+              ✓ Ya contestaste a {R.cerrados.slice(0, 4).join(", ")}{(R.n && R.n.cerrados > 4) ? ` y ${R.n.cerrados - 4} más` : ""}
+            </Text>
+          ) : null}
+          {R.fuente === "reglas" ? <Text style={{ fontSize: 11.5, color: theme.muted2, marginTop: 6 }}>Ordenado por reglas — el resumen con IA se está generando.</Text> : null}
+        </View>
+      ) : null}
 
       {b.text ? (
         <View style={{ marginTop: 14, ...card, padding: 16, borderLeftWidth: 3, borderLeftColor: theme.accent }}>
