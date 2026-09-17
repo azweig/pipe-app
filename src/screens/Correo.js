@@ -5,7 +5,7 @@
 // invisible y no había forma de corregirlo — llegó a haber ahí adentro un "Problema de facturación", un aviso de
 // corte de servicio y la notificación de una reunión, sin que se vieran en ningún lado.
 import React, { useEffect, useState, useCallback } from "react"
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar } from "react-native"
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar, AppState } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
 import { getMail, mailNoSpam, mailEsSpam, cuentasCorreo } from "../api"
@@ -37,6 +37,14 @@ export default function Correo({ navigation }) {
     setLoading(false); setRefreshing(false)
   }, [])
   useEffect(() => { setLoading(true); cargar(tab) }, [tab, cargar])
+
+  // SE ACTUALIZA SOLO. Antes la lista se quedaba con lo que había al entrar. Acá el disparador natural es volver a la
+  // app: en un teléfono no tiene sentido pedir cada minuto en segundo plano —gasta batería y datos— así que se
+  // refresca cuando la app vuelve a primer plano, y con el gesto de tirar hacia abajo.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (st) => { if (st === "active" && !abierto && !nuevo) cargar(tab) })
+    return () => sub.remove()
+  }, [tab, cargar, abierto, nuevo])
 
   // Marcar/desmarcar corrige el clasificador para siempre. La fila se saca al toque (el server ya no la va a
   // devolver) y recién después se recarga: si no, queda un segundo ahí y parece que no pasó nada.
