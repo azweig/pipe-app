@@ -306,3 +306,9 @@ export const getMail = (tab) => api(`/api/mail?tab=${encodeURIComponent(tab)}`)
 // Desmarcar corrige el clasificador para SIEMPRE, no sólo esta vista.
 export const mailNoSpam = (key) => api("/api/spam/unmark", { method: "POST", body: JSON.stringify({ key }) })
 export const mailEsSpam = (key) => api("/api/contact/spam", { method: "POST", body: JSON.stringify({ key, addr: String(key).replace(/^email:/, "") }) })
+
+// ── Correo como correo: leer el hilo, preparar respuestas, redactar y enviar ──
+export const getCorreoHilo = (key) => api(`/api/mail/message?key=${encodeURIComponent(key)}`)
+export const prepararCorreo = (key, modo) => api(`/api/mail/prepare?key=${encodeURIComponent(key)}&modo=${encodeURIComponent(modo)}`)
+export const cuentasCorreo = () => api("/api/mail/accounts")
+export const enviarCorreoMail = (b) => api("/api/mail/send", { method: "POST", body: JSON.stringify(b) })

@@ -8,12 +8,19 @@ import React, { useEffect, useState, useCallback } from "react"
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getMail, mailNoSpam, mailEsSpam } from "../api"
+import { getMail, mailNoSpam, mailEsSpam, cuentasCorreo } from "../api"
+import CorreoLector, { Redactor } from "./CorreoLector"
 import { ago } from "../util"
 
 const TABS = [["prioritarios", "Prioritarios"], ["todos", "Todos"], ["spam", "Spam"]]
 
 export default function Correo({ navigation }) {
+  // El clic abre el correo COMO correo, con su asunto y destinatarios — ya no manda a la vista de chat.
+  const [abierto, setAbierto] = useState("")
+  const [nuevo, setNuevo] = useState(false)
+  const [cuentas, setCuentas] = useState([])
+  useEffect(() => { cuentasCorreo().then((r) => setCuentas((r && r.cuentas) || [])).catch(() => {}) }, [])
+
   const insets = useSafeAreaInsets()
   const [tab, setTab] = useState("prioritarios")
   const [items, setItems] = useState([])
@@ -45,10 +52,23 @@ export default function Correo({ navigation }) {
   const nota = tab === "spam" ? "Esto es lo que el clasificador apartó. Si algo no es spam, marcalo y vuelve a la bandeja."
     : tab === "prioritarios" ? "Correo que no es masivo: marcado importante, avisos que piden acción (✦ 🧾) o gente con la que ya venís hablando." : ""
 
+  // Con un correo abierto, la lista cede el lugar: en una pantalla de teléfono leer y listar no conviven.
+  if (abierto) return (
+    <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}>
+      <StatusBar barStyle="dark-content" />
+      <CorreoLector correoKey={abierto} onVolver={() => { setAbierto(""); cargar(tab) }} />
+    </View>
+  )
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}>
       <StatusBar barStyle="dark-content" />
-      <Text style={{ fontSize: 26, fontWeight: "800", color: theme.ink, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 }}>Correo</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 }}>
+        <Text style={{ flex: 1, fontSize: 26, fontWeight: "800", color: theme.ink }}>Correo</Text>
+        <TouchableOpacity onPress={() => setNuevo(true)} style={{ backgroundColor: theme.accent, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 }}>
+          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>✉️ Nuevo</Text>
+        </TouchableOpacity>
+      </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 10 }}>
         {TABS.map(([id, lbl]) => (
@@ -61,6 +81,12 @@ export default function Correo({ navigation }) {
           </TouchableOpacity>
         ))}
       </ScrollView>
+      {nuevo ? (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16 }}>
+          <Redactor inicial={{}} cuentas={cuentas} onCerrar={() => setNuevo(false)}
+            onEnviado={() => { setNuevo(false); cargar(tab) }} />
+        </ScrollView>
+      ) : null}
       {nota ? <Text style={{ paddingHorizontal: 16, paddingBottom: 10, fontSize: 12, color: theme.muted, lineHeight: 17 }}>{nota}</Text> : null}
 
       {loading ? <ActivityIndicator style={{ marginTop: 30 }} color={theme.accent} /> : (
@@ -71,7 +97,7 @@ export default function Correo({ navigation }) {
             <Text style={{ textAlign: "center", color: theme.muted2, fontSize: 13.5, marginTop: 28 }}>{vacio}</Text>
           ) : items.map((m) => (
             <TouchableOpacity key={m.key} activeOpacity={0.75}
-              onPress={() => navigation.navigate("Conversation", { convKey: m.key, name: m.name, photo: m.photo })}
+              onPress={() => setAbierto(m.key)}
               style={{ flexDirection: "row", gap: 10, padding: 12, borderRadius: 12, marginBottom: 2,
                 backgroundColor: m.unread ? "rgba(99,102,241,0.07)" : theme.card, borderWidth: 1, borderColor: m.unread ? "rgba(99,102,241,0.18)" : "transparent" }}>
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -84,8 +110,14 @@ export default function Correo({ navigation }) {
                   {m.account ? (
                     <Text style={{ fontSize: 10, fontWeight: "600", color: theme.muted2, borderWidth: 1, borderColor: theme.line, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6 }}>{m.account}</Text>
                   ) : null}
+                  {/* Cuántos mensajes tiene la cadena: un ida y vuelta de 40 correos y uno suelto se veían idénticos. */}
+                  {(m.count || 0) > 1 ? (
+                    <Text style={{ fontSize: 10.5, fontWeight: "700", color: theme.muted2, backgroundColor: theme.bg, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999 }}>{m.count}</Text>
+                  ) : null}
                 </View>
+                {/* Quién habló ÚLTIMO: sin esto, un correo que escribiste VOS se lee como si te lo hubieran mandado. */}
                 <Text numberOfLines={2} style={{ fontSize: 12.5, color: theme.muted, marginTop: 3, lineHeight: 17 }}>
+                  {m.lastDir === "out" ? <Text style={{ fontWeight: "700", color: theme.accent }}>Vos: </Text> : null}
                   {String(m.lastText || "").replace(/\s+/g, " ").slice(0, 160)}
                 </Text>
               </View>
