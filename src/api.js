@@ -312,3 +312,4 @@ export const getCorreoHilo = (key) => api(`/api/mail/message?key=${encodeURIComp
 export const prepararCorreo = (key, modo) => api(`/api/mail/prepare?key=${encodeURIComponent(key)}&modo=${encodeURIComponent(modo)}`)
 export const cuentasCorreo = () => api("/api/mail/accounts")
 export const enviarCorreoMail = (b) => api("/api/mail/send", { method: "POST", body: JSON.stringify(b) })
+export const marcarTodoLeido = (tab) => api("/api/mail/seen-all", { method: "POST", body: JSON.stringify({ tab }) })

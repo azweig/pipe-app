@@ -5,10 +5,10 @@
 // invisible y no había forma de corregirlo — llegó a haber ahí adentro un "Problema de facturación", un aviso de
 // corte de servicio y la notificación de una reunión, sin que se vieran en ningún lado.
 import React, { useEffect, useState, useCallback } from "react"
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar, AppState } from "react-native"
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar, AppState, Alert } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
-import { getMail, mailNoSpam, mailEsSpam, cuentasCorreo } from "../api"
+import { getMail, mailNoSpam, mailEsSpam, cuentasCorreo, markSeen, marcarTodoLeido } from "../api"
 import CorreoLector, { Redactor } from "./CorreoLector"
 import { ago } from "../util"
 
@@ -48,6 +48,16 @@ export default function Correo({ navigation }) {
 
   // Marcar/desmarcar corrige el clasificador para siempre. La fila se saca al toque (el server ya no la va a
   // devolver) y recién después se recarga: si no, queda un segundo ahí y parece que no pasó nada.
+  // Destructivo y sin deshacer: se pierde qué estaba sin leer. Confirmación explícita, como el resto de la app.
+  const todoLeido = () => {
+    const sinLeer = items.filter((x) => x.nuevo).length
+    if (!sinLeer) return Alert.alert("Ya está todo leído")
+    Alert.alert("Marcar todo como leído", `Son ${sinLeer} correos sin leer en esta pestaña. No se puede deshacer.`, [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Marcar", style: "destructive", onPress: async () => { await marcarTodoLeido(tab).catch(() => {}); cargar(tab) } },
+    ])
+  }
+
   const marcar = async (m, spam) => {
     setBusy(m.key)
     setItems((prev) => prev.filter((x) => x.key !== m.key))
@@ -73,6 +83,9 @@ export default function Correo({ navigation }) {
       <StatusBar barStyle="dark-content" />
       <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 }}>
         <Text style={{ flex: 1, fontSize: 26, fontWeight: "800", color: theme.ink }}>Correo</Text>
+        <TouchableOpacity onPress={todoLeido} hitSlop={8} style={{ marginRight: 12 }}>
+          <Text style={{ color: theme.muted, fontSize: 16 }}>✓✓</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => setNuevo(true)} style={{ backgroundColor: theme.accent, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 }}>
           <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>✉️ Nuevo</Text>
         </TouchableOpacity>
@@ -105,14 +118,14 @@ export default function Correo({ navigation }) {
             <Text style={{ textAlign: "center", color: theme.muted2, fontSize: 13.5, marginTop: 28 }}>{vacio}</Text>
           ) : items.map((m) => (
             <TouchableOpacity key={m.key} activeOpacity={0.75}
-              onPress={() => setAbierto(m.key)}
+              onPress={() => { setAbierto(m.key); markSeen(m.key, Date.now()).catch(() => {}) }}
               style={{ flexDirection: "row", gap: 10, padding: 12, borderRadius: 12, marginBottom: 2,
-                backgroundColor: m.unread ? "rgba(99,102,241,0.07)" : theme.card, borderWidth: 1, borderColor: m.unread ? "rgba(99,102,241,0.18)" : "transparent" }}>
+                backgroundColor: m.nuevo ? "rgba(99,102,241,0.07)" : theme.card, borderWidth: 1, borderColor: m.nuevo ? "rgba(99,102,241,0.18)" : "transparent" }}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   {m.importante ? <Text style={{ fontSize: 12, color: "#e0a83a" }}>✦</Text> : null}
                   {!m.importante && m.transaccional ? <Text style={{ fontSize: 12 }}>🧾</Text> : null}
-                  <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: m.unread ? "800" : "700", color: theme.ink, flexShrink: 1 }}>
+                  <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: m.nuevo ? "800" : "700", color: theme.ink, flexShrink: 1 }}>
                     {m.name || m.email || "(sin remitente)"}
                   </Text>
                   {m.account ? (
