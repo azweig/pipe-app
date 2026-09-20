@@ -85,6 +85,12 @@ export default function Conversation({ route, navigation }) {
   const [hasOlder, setHasOlder] = useState(false)      // ▲ ¿hay mensajes más antiguos para paginar? (grupos grandes)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [hint, setHint] = useState("")                 // tooltip por long-press de los íconos (no hay hover en móvil)
+  // DESDE CUÁL DE TUS NÚMEROS SALE. WhatsApp separa las conversaciones por número: si sale de otra línea tuya, a esa
+  // persona le llega un chat nuevo de un desconocido y te contesta ahí. El servidor ya filtró las líneas caídas y
+  // marcó cuál se usa (src/lib/origen-envio.mjs en el hub) — acá sólo se dibuja y se elige.
+  const [cuentas, setCuentas] = useState([])
+  const [elegible, setElegible] = useState(false)
+  const [desde, setDesde] = useState("")
   const [targets, setTargets] = useState([])
   const [target, setTarget] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -160,7 +166,10 @@ export default function Conversation({ route, navigation }) {
       // leías la conversación y el punto azul de no-leído seguía ahí tras el próximo poll. Web y escritorio sí lo hacen.
       markSeen(convKey, Date.now()).catch(() => {})
     })()
-    getTargets(convKey).then((t) => { const ts = (t && t.targets) || []; setTargets(ts); setTarget(ts[(t && t.default) || 0] || null) }).catch(() => {})
+    getTargets(convKey).then((t) => {
+      const ts = (t && t.targets) || []; setTargets(ts); setTarget(ts[(t && t.default) || 0] || null)
+      setCuentas((t && t.cuentas) || []); setElegible(!!(t && t.elegible)); setDesde("")
+    }).catch(() => {})
     if (draft) setText(draft) // borrador de IA precargado desde Home
     const iv = setInterval(load, 5000)
     // los timers de JS se pausan en background → al VOLVER a foreground refrescamos al toque (si no, quedaba stale)
@@ -207,7 +216,7 @@ export default function Conversation({ route, navigation }) {
     const msgId = nuevoMsgId()
     const id = optimistic({ id: msgId, text: t, pendiente: true, ...(covertOn ? { covert: { text: t, style: covertStyle } } : {}) }) // covert: burbuja muestra tu texto real + badge
     try { Haptics.selectionAsync() } catch {}
-    encolar({ msgId: id, key: convKey, text: t, channel: target && target.channel, target: target && target.target, covert: !!covertOn, ts: Date.now() })
+    encolar({ msgId: id, key: convKey, text: t, channel: target && target.channel, target: target && target.target, desde, covert: !!covertOn, ts: Date.now() })
   }
 
   // ── MODO ENCUBIERTO ("El Santo") ──
@@ -520,6 +529,10 @@ export default function Conversation({ route, navigation }) {
   }
 
   const multiTarget = targets.length > 1
+  // Misma regla que la web y el escritorio (el hub la define en src/lib/origen-envio.mjs y ya manda la lista filtrada
+  // y marcada): mostrar sólo si hay más de una línea, resaltar si el usuario la cambió a mano.
+  const origen = elegible ? (cuentas.find((c) => c.id === desde) || cuentas.find((c) => c.usada) || null) : null
+  const origenCambiado = !!(origen && desde && !origen.usada)
   const chanIcon = target && target.channel === "email" ? "✉️" : "📱"
   const round = (bg, brd) => ({ width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", flexShrink: 0, backgroundColor: bg, ...(brd ? { borderWidth: 1.5, borderColor: brd } : {}) })
 
@@ -572,7 +585,16 @@ export default function Conversation({ route, navigation }) {
           <TouchableOpacity onPress={() => stopRec(false)} style={round(theme.accent)}><Text style={{ color: "#fff", fontSize: 17 }}>➤</Text></TouchableOpacity>
         </View>
       ) : (
-        <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6, padding: 8, paddingBottom: (insets.bottom || 8) + 4, backgroundColor: theme.card, borderTopWidth: 0.5, borderTopColor: theme.line }}>
+        <View style={{ backgroundColor: theme.card, borderTopWidth: 0.5, borderTopColor: theme.line, paddingBottom: (insets.bottom || 8) + 4 }}>
+        {origen ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingTop: 7 }}>
+            <Text style={{ fontSize: 11.5, color: theme.muted2 }}>desde</Text>
+            <TouchableOpacity onPress={() => setSheet("origen")} style={{ flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderColor: origenCambiado ? theme.accent : theme.line, backgroundColor: origenCambiado ? theme.accent : theme.bg, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 }}>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: origenCambiado ? "#fff" : theme.muted }}>📤 {origen.label} ▾</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6, padding: 8 }}>
           <TouchableOpacity onPress={() => setSheet("ai")} onLongPress={() => showHint("IA: sugerir respuesta o resumir el chat")} accessibilityLabel="Asistente de IA" style={round(theme.bg, theme.accent)}><Text style={{ color: theme.accent, fontWeight: "800", fontSize: 14 }}>Ai</Text></TouchableOpacity>
           {multiTarget ? <TouchableOpacity onPress={() => setSheet("target")} style={round("#fff", theme.line)}><Text style={{ fontSize: 16 }}>{chanIcon}▾</Text></TouchableOpacity> : null}
           <TextInput ref={inputRef} value={text} onChangeText={setText} placeholder={covertOn ? "🕊️ Mensaje encubierto…" : (target && target.channel === "email" ? "Email…" : t("message_ph"))} placeholderTextColor={theme.muted2} multiline
@@ -589,6 +611,7 @@ export default function Conversation({ route, navigation }) {
               <TouchableOpacity onPress={() => startRec("ai")} onLongPress={() => showHint("Hablá y la IA lo pasa a texto")} accessibilityLabel="Dictado con IA" style={round(theme.bg, theme.accent)}><Text style={{ fontSize: 13 }}>🎤</Text><Text style={{ fontSize: 8, color: theme.accent, fontWeight: "800", position: "absolute", bottom: 3, right: 4 }}>IA</Text></TouchableOpacity>
             </>
           )}
+        </View>
         </View>
       )}
 
@@ -686,6 +709,21 @@ export default function Conversation({ route, navigation }) {
             <Text style={{ fontSize: 18 }}>{t.channel === "email" ? "✉️" : "📱"}</Text>
             <Text style={{ flex: 1, fontSize: 15.5, color: theme.ink, fontWeight: target === t ? "700" : "400" }}>{t.label}</Text>
             {target === t ? <Text style={{ color: theme.accent }}>✓</Text> : null}
+          </TouchableOpacity>
+        ))}
+      </Sheet>
+
+      <Sheet visible={sheet === "origen"} onClose={() => setSheet(null)}>
+        <Text style={{ fontSize: 19, fontWeight: "800", color: theme.ink, marginBottom: 4 }}>Enviar desde…</Text>
+        <Text style={{ color: theme.muted, marginBottom: 12 }}>WhatsApp separa las conversaciones por número: si cambiás de línea, a esa persona le llega un chat nuevo.</Text>
+        {cuentas.map((c, i) => (
+          <TouchableOpacity key={c.id} onPress={() => { setDesde(c.id); setSheet(null) }} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 13, borderTopWidth: i ? 0.5 : 0, borderTopColor: theme.line }}>
+            <Text style={{ fontSize: 18 }}>📤</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15.5, color: theme.ink, fontWeight: (desde || (cuentas.find((x) => x.usada) || {}).id) === c.id ? "700" : "400" }}>{c.label}</Text>
+              {c.agenda ? null : <Text style={{ fontSize: 11.5, color: theme.muted2, marginTop: 2 }}>no te tiene agendado: le llega de un desconocido</Text>}
+            </View>
+            {c.usada ? <Text style={{ fontSize: 11.5, color: theme.muted2 }}>actual</Text> : null}
           </TouchableOpacity>
         ))}
       </Sheet>

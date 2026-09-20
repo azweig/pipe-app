@@ -148,7 +148,7 @@ export const searchContent = (q) => api("/api/router-search", { method: "POST", 
 export const getTargets = (key) => api("/api/thread/targets?key=" + encodeURIComponent(key))
 export const sendMsg = (key, text, t, covert) => api("/api/send", { method: "POST", body: JSON.stringify({ key, text, channel: t && t.channel, target: t && t.target, covert: !!covert }) })
 // versión para la COLA: manda el msgId (el server lo reserva → un reintento tras 502 no duplica) y devuelve { status, data }
-export const sendMsgCola = (it) => apiCoded("/api/send", { method: "POST", body: JSON.stringify({ key: it.key, text: it.text, channel: it.channel, target: it.target, covert: !!it.covert, msgId: it.msgId }) })
+export const sendMsgCola = (it) => apiCoded("/api/send", { method: "POST", body: JSON.stringify({ key: it.key, text: it.text, channel: it.channel, target: it.target, desde: it.desde || "", covert: !!it.covert, msgId: it.msgId }) })
 // modo encubierto ("El Santo"): config por-contacto + preview en vivo
 export const getCovertCfg = (key) => api("/api/covert/config?key=" + encodeURIComponent(key))
 export const setCovertCfg = (key, pass, style) => api("/api/covert/config", { method: "POST", body: JSON.stringify({ key, pass, style }) })
